@@ -1,0 +1,79 @@
+name: macOS Build
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'go_lib/**'
+      - 'lib/**'
+      - 'macos/**'
+      - 'images/**'
+      - 'pubspec.yaml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'go_lib/**'
+      - 'lib/**'
+      - 'macos/**'
+      - 'images/**'
+      - 'pubspec.yaml'
+
+jobs:
+  build-go:
+    name: Go Build & Test (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go_lib/go.mod
+
+      - name: Build Go dylib
+        working-directory: go_lib
+        run: |
+          CGO_ENABLED=1 go build -buildvcs=false -o botsec.dylib -buildmode=c-shared .
+          if [ -f "libbotsec.dylib" ] && [ ! -f "botsec.dylib" ]; then
+            mv libbotsec.dylib botsec.dylib
+          fi
+
+      - name: Run Go tests
+        working-directory: go_lib
+        run: |
+          go test -count=1 -timeout 120s ./...
+
+      - name: Upload dylib artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: botsec-dylib
+          path: go_lib/botsec.dylib
+          retention-days: 7
+
+  build-flutter:
+    name: Flutter Build (macOS)
+    runs-on: macos-latest
+    needs: [build-go]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Download Go dylib artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: botsec-dylib
+          path: plugins
+
+      - name: Disable code signing for CI
+        run: |
+          echo "CODE_SIGN_IDENTITY=" >> macos/Runner/Configs/Release.xcconfig
+          echo "CODE_SIGNING_REQUIRED=NO" >> macos/Runner/Configs/Release.xcconfig
+          echo "CODE_SIGNING_ALLOWED=NO" >> macos/Runner/Configs/Release.xcconfig
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build macOS app
+        run: flutter build macos --release --no-tree-shake-icons

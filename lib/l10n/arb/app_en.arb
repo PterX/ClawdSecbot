@@ -1,0 +1,965 @@
+{
+  "@@locale": "en",
+  "appTitle": "ClawdSecbot",
+  "showWindow": "Show Window",
+  "exit": "Exit",
+  "idleTitle": "ClawdSecbot Security",
+  "idleSubtitle": "Scan your Clawdbot configuration for security risks",
+  "startScan": "Start Security Scan",
+  "scanning": "Scanning...",
+  "scanComplete": "Scan Complete",
+  "rescan": "Rescan",
+  "rescanConfirmTitle": "Confirm Rescan",
+  "rescanConfirmMessage": "There are currently {count} Bot asset(s) under protection. Rescanning will stop all active protections. Continue?",
+  "@rescanConfirmMessage": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "continueButton": "Continue",
+  "checkingProtectionStatus": "Checking protection status...",
+  "configuration": "Configuration",
+  "status": "Status",
+  "found": "Found",
+  "notFound": "Not Found",
+  "path": "Path",
+  "gatewayConfiguration": "Gateway Configuration",
+  "noGatewayConfig": "No gateway configuration found",
+  "port": "Port",
+  "bind": "Bind",
+  "auth": "Auth",
+  "controlUi": "Control UI",
+  "enabled": "Enabled",
+  "disabled": "Disabled",
+  "securityFindings": "Security Findings",
+  "noSecurityIssues": "No security issues found",
+  "secureConfigMessage": "Your Clawdbot configuration looks secure!",
+  "testGoIntegration": "Test Go Integration",
+  "goIntegrationTest": "Go Integration Test",
+  "close": "Close",
+  "errorCallingGo": "Error calling Go: {error}",
+  "settings": "Settings",
+  "language": "Language",
+  "switchLanguage": "Switch Language",
+
+  "riskNonLoopbackBinding": "Non-loopback address binding",
+  "riskNonLoopbackBindingDesc": "Gateway is bound to \"{bind}\", which allows external access. Consider binding to 127.0.0.1 only.",
+  "riskNoAuth": "No authentication configured",
+  "riskNoAuthDesc": "Gateway has no authentication enabled. Anyone with network access can connect.",
+  "riskWeakPassword": "Weak authentication password",
+  "riskWeakPasswordDesc": "Password length is less than 12 characters. Use a stronger password.",
+  "riskAllPluginsAllowed": "All plugins allowed",
+  "riskAllPluginsAllowedDesc": "Wildcard plugin permissions enabled. This may allow untrusted code execution.",
+  "riskControlUiEnabled": "Control UI enabled",
+  "riskControlUiEnabledDesc": "Web control interface is enabled. Ensure it is properly secured.",
+  "riskRunningAsRoot": "Running as root",
+  "riskRunningAsRootDesc": "Application is running with root privileges. This increases the attack surface.",
+  
+  "riskConfigPermUnsafe": "Config File Permission Unsafe",
+  "riskConfigPermUnsafeDesc": "Config file permissions are {current}, expected 600. Run chmod 600 {path} to fix.",
+  "riskConfigDirPermUnsafe": "Config Directory Permission Unsafe",
+  "riskConfigDirPermUnsafeDesc": "Config directory permissions are {current}, expected 700. Run chmod 700 {path} to fix.",
+  "riskSandboxDisabledDefault": "Default Sandbox Disabled",
+  "riskSandboxDisabledDefaultDesc": "Default sandbox mode is set to 'none'. Consider enabling sandbox isolation.",
+  "riskSandboxDisabledAgent": "Agent Sandbox Disabled",
+  "riskSandboxDisabledAgentDesc": "Sandbox mode for agent '{agent}' is set to 'none'.",
+  "riskLoggingRedactOff": "Sensitive Data Redaction Disabled",
+  "riskLoggingRedactOffDesc": "Logging redaction is set to 'off'. This may expose sensitive data in logs.",
+  "riskLogDirPermUnsafe": "Log Directory Permission Unsafe",
+  "riskLogDirPermUnsafeDesc": "Log directory permissions are unsafe, expected 700.",
+  "riskPlaintextSecrets": "Plaintext Secrets Detected",
+  "riskPlaintextSecretsDesc": "Potential plaintext secret found in config file (pattern: {pattern}). Use environment variables or a secrets manager.",
+
+  "riskOneClickRce": "1-click RCE Remote Code Execution Vulnerability",
+  "riskOneClickRceDesc": "OpenClaw has a critical 1-click RCE vulnerability (CVSS 10.0). Attackers can execute arbitrary code by tricking users into visiting malicious websites. Affected versions: < 2026.1.24-1, current version: {version}. Upgrade to the latest version immediately.",
+  "@riskOneClickRceDesc": {
+    "placeholders": {
+      "version": {"type": "String"}
+    }
+  },
+
+  "riskSkillsNotScanned": "Skills Not Scanned for Prompt Injection",
+  "riskSkillsNotScannedDesc": "{count} skill(s) have not been scanned for prompt injection risks: {skills}. Click to scan.",
+
+  "riskSkillSecurityIssue": "Risky Skill: {skillName}",
+  "@riskSkillSecurityIssue": {
+    "placeholders": {
+      "skillName": {"type": "String"}
+    }
+  },
+  "riskSkillSecurityIssueDesc": "Skill \"{skillName}\" has {issueCount} security issue(s). Consider deleting this skill.",
+  "@riskSkillSecurityIssueDesc": {
+    "placeholders": {
+      "skillName": {"type": "String"},
+      "issueCount": {"type": "int"}
+    }
+  },
+
+  "riskLevelLow": "Low",
+  "riskLevelMedium": "Medium",
+  "riskLevelHigh": "High",
+  "riskLevelCritical": "Critical",
+
+  "detectedAssets": "Detected Bot",
+  "assetName": "Bot Name",
+  "assetType": "Bot Type",
+  "version": "Version",
+  "serviceName": "Service Name",
+  "processPaths": "Process Paths",
+  "metadata": "Metadata",
+  "mitigate": "Mitigate",
+  "fixApplied": "Fix applied successfully",
+  "cancel": "Cancel",
+  "aiModelConfig": "AI Model Config",
+
+  "skillScanTitle": "AI Skill Security Analysis",
+  "skillScanScanning": "Scanning",
+  "skillScanCompleted": "Scan completed",
+  "skillScanPreparing": "Preparing...",
+  "skillScanConfigError": "Please configure AI model first",
+  "skillScanAllSafe": "All skills passed security check",
+  "skillScanRiskDetected": "Risk detected",
+  "skillScanIssues": "issue(s)",
+  "skillScanDelete": "Delete",
+  "skillScanDeleted": "Deleted",
+  "skillScanTrust": "Trust",
+  "skillScanTrusted": "Trusted",
+  "skillScanTrustTitle": "Trust Skill",
+  "skillScanTrustConfirm": "Trust \"{skillName}\"? Risks from this skill will no longer appear on the main page.",
+  "@skillScanTrustConfirm": {
+    "placeholders": {
+      "skillName": {"type": "String"}
+    }
+  },
+  "skillScanFailed": "Scan failed - will retry on next scan",
+  "skillScanDeleteTitle": "Delete Skill",
+  "skillScanDeleteConfirm": "Are you sure you want to delete \"{skillName}\"? This action cannot be undone.",
+  "skillScanDone": "Done",
+  "skillScanFailedLoadConfig": "Failed to load config: {error}",
+  "@skillScanFailedLoadConfig": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "skillScanScanningSkill": "Scanning skill: {skillName}",
+  "@skillScanScanningSkill": {
+    "placeholders": {
+      "skillName": {"type": "String"}
+    }
+  },
+  "skillScanRiskDetectedLog": "RISK DETECTED: {summary}",
+  "@skillScanRiskDetectedLog": {
+    "placeholders": {
+      "summary": {"type": "String"}
+    }
+  },
+  "skillScanSkillSafe": "Skill appears safe",
+  "skillScanErrorScanning": "Error scanning skill: {error}",
+  "@skillScanErrorScanning": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "skillScanAnalysisComplete": "--- Analysis Complete ---",
+  "skillScanSafe": "Safe",
+  "skillScanRiskLevel": "Risk Level",
+  "skillScanSummary": "Summary",
+  "skillScanIssueType": "Type",
+  "skillScanIssueSeverity": "Severity",
+  "skillScanIssueFile": "File",
+  "skillScanIssueDesc": "Description",
+  "skillScanIssueEvidence": "Evidence",
+  "skillScanTypePromptInjection": "Prompt Injection",
+  "skillScanTypeDataTheft": "Data Theft",
+  "skillScanTypeCodeExecution": "Code Execution",
+  "skillScanTypeSocialEngineering": "Social Engineering",
+  "skillScanTypeSupplyChain": "Supply Chain Attack",
+  "skillScanTypeOther": "Other Risk",
+  "skillScanNoSkills": "No skills found to scan",
+
+  "modelConfigTitle": "Security Model",
+  "modelConfigProvider": "Model Provider",
+  "modelConfigEndpoint": "Endpoint",
+  "modelConfigEndpointId": "Endpoint ID",
+  "modelConfigBaseUrl": "Base URL",
+  "modelConfigBaseUrlOptional": "Base URL (optional)",
+  "modelConfigApiKey": "API Key",
+  "modelConfigAccessKey": "Access Key",
+  "modelConfigSecretKey": "Secret Key",
+  "modelConfigModelName": "Model Name",
+  "modelConfigSave": "Save",
+  "modelConfigFillRequired": "Please fill in all required fields",
+  "modelConfigSaveFailed": "Failed to save configuration",
+  "modelConfigRequired": "Please configure AI model to continue",
+  "modelConfigTesting": "Testing...",
+  "modelConfigSaving": "Saving...",
+  "modelConfigTestFailed": "Connection test failed: {error}",
+  "@modelConfigTestFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+
+  "oneClickProtection": "Enable Protection",
+  "protectionMonitor": "Protection Monitor",
+  "protectionStarting": "Starting...",
+  "launchAtStartup": "Launch at Startup",
+  "auditLog": "Audit Log",
+  "protectionConfirmTitle": "Enable Protection",
+  "protectionConfirmMessage": "Enabling protection will analyze agent behavior in real-time to ensure your device security",
+  "protectionConfirmButton": "Confirm Enable",
+  "protectionMonitorTitle": "Protection Monitor Center",
+  "protectionStatus": "Protection Status",
+  "protectionActive": "Active",
+  "protectionInactive": "Inactive",
+  "behaviorAnalysis": "Behavior Analysis",
+  "threatDetection": "Threat Detection",
+  "realTimeMonitor": "Real-time Monitor",
+  "noThreatsDetected": "No threats detected",
+  "allSystemsNormal": "All systems operating normally",
+
+  "proxyStarting": "Starting protection proxy...",
+  "proxyStartingDesc": "Reading config and starting proxy server",
+  "proxyStartFailed": "Start failed",
+  "retry": "Retry",
+  "analyzing": "Analyzing...",
+  "analysisCount": "Analysis Count",
+  "messageCountLabel": "Message Count",
+  "warningCountLabel": "Warning Count",
+  "blockedCount": "Blocked Count",
+  "analysisLogs": "Analysis Logs",
+  "clear": "Clear",
+  "waitingLogs": "Waiting for logs...",
+  "securityEvents": "Security Events",
+  "noSecurityEvents": "No security events",
+  "latestResult": "Latest Result",
+  "maliciousDetected": "Malicious instruction detected:",
+
+  "dartProxyStarting": "[Protection Proxy] Starting proxy...",
+  "dartProxyStarted": "[Protection Proxy] Started on port {port}, provider: {provider}",
+  "@dartProxyStarted": {
+    "placeholders": {
+      "port": {"type": "int"},
+      "provider": {"type": "String"}
+    }
+  },
+  "dartProxyFailed": "[Protection Proxy] Failed: {error}",
+  "@dartProxyFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "dartProxyError": "[Protection Proxy] Error: {error}",
+  "@dartProxyError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "dartProxyStopping": "[Protection Proxy] Stopping proxy...",
+  "dartProxyStopped": "[Protection Proxy] Stopped",
+  "eventProxyStarting": "Starting protection proxy",
+  "eventProxyStarted": "Proxy started on port {port} for provider {provider}",
+  "@eventProxyStarted": {
+    "placeholders": {
+      "port": {"type": "int"},
+      "provider": {"type": "String"}
+    }
+  },
+  "eventProxyError": "Failed to start proxy: {error}",
+  "@eventProxyError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "eventProxyException": "Exception starting proxy: {error}",
+  "@eventProxyException": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+
+  "proxyNewRequest": "[Proxy] ========== NEW REQUEST ==========",
+  "proxyRequestInfo": "[Proxy] Request: model={model}, messages={messageCount}, stream={stream}",
+  "@proxyRequestInfo": {
+    "placeholders": {
+      "model": {"type": "String"},
+      "messageCount": {"type": "int"},
+      "stream": {"type": "String"}
+    }
+  },
+  "proxyMessageInfo": "[Proxy] Message[{index}] role={role}: {content}",
+  "@proxyMessageInfo": {
+    "placeholders": {
+      "index": {"type": "int"},
+      "role": {"type": "String"},
+      "content": {"type": "String"}
+    }
+  },
+  "proxyToolActivityDetected": "[Proxy] ========== TOOL ACTIVITY DETECTED IN REQUEST ==========",
+  "proxyToolCallsFound": "[Proxy] Found {toolCount} tool calls, {resultCount} tool results",
+  "@proxyToolCallsFound": {
+    "placeholders": {
+      "toolCount": {"type": "int"},
+      "resultCount": {"type": "int"}
+    }
+  },
+  "proxyResponseNonStream": "[Proxy] ========== RESPONSE (non-stream) ==========",
+  "proxyResponseInfo": "[Proxy] Response: model={model}, choices={choiceCount}",
+  "@proxyResponseInfo": {
+    "placeholders": {
+      "model": {"type": "String"},
+      "choiceCount": {"type": "int"}
+    }
+  },
+  "proxyResponseContent": "[Proxy] Response content: {content}",
+  "@proxyResponseContent": {
+    "placeholders": {
+      "content": {"type": "String"}
+    }
+  },
+  "proxyToolCallsDetected": "[Proxy] ========== TOOL CALLS DETECTED ==========",
+  "proxyToolCallCount": "[Proxy] Tool calls count: {count}",
+  "@proxyToolCallCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "proxyToolCallName": "[Proxy] ToolCall[{index}]: {name}",
+  "@proxyToolCallName": {
+    "placeholders": {
+      "index": {"type": "int"},
+      "name": {"type": "String"}
+    }
+  },
+  "proxyToolCallArgs": "[Proxy] ToolCall[{index}] args: {args}",
+  "@proxyToolCallArgs": {
+    "placeholders": {
+      "index": {"type": "int"},
+      "args": {"type": "String"}
+    }
+  },
+  "proxyStartingAnalysis": "[Proxy] ========== STARTING ANALYSIS ==========",
+  "proxyStreamFinished": "[Proxy] ========== STREAM FINISHED (reason={reason}) ==========",
+  "@proxyStreamFinished": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "proxyToolCallsInStream": "[Proxy] ========== TOOL CALLS DETECTED IN STREAM ==========",
+  "proxyStreamContentNoTools": "[Proxy] Stream content (no tool calls): {content}",
+  "@proxyStreamContentNoTools": {
+    "placeholders": {
+      "content": {"type": "String"}
+    }
+  },
+  "proxyAgentNotAvailable": "[Proxy] Protection agent not available, allowing request",
+  "proxySendingAnalysis": "[Proxy] Sending to protection agent for analysis...",
+  "proxyOriginalTask": "[Proxy] Original user task: {task}",
+  "@proxyOriginalTask": {
+    "placeholders": {
+      "task": {"type": "String"}
+    }
+  },
+  "proxyMessageCountLog": "[Proxy] Messages count: {count}",
+  "@proxyMessageCountLog": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "proxyAnalyzeMessage": "[Proxy] Analyze msg[{index}] role={role}: {content}",
+  "@proxyAnalyzeMessage": {
+    "placeholders": {
+      "index": {"type": "int"},
+      "role": {"type": "String"},
+      "content": {"type": "String"}
+    }
+  },
+  "proxyAnalysisError": "[Proxy] Analysis error: {error}, allowing request",
+  "@proxyAnalysisError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyAnalysisResult": "[Proxy] ========== ANALYSIS RESULT ==========",
+  "proxyRiskLevel": "[Proxy] Risk Level: {level}",
+  "@proxyRiskLevel": {
+    "placeholders": {
+      "level": {"type": "String"}
+    }
+  },
+  "proxyConfidence": "[Proxy] Confidence: {confidence}%",
+  "@proxyConfidence": {
+    "placeholders": {
+      "confidence": {"type": "int"}
+    }
+  },
+  "proxySuggestedAction": "[Proxy] Suggested Action: {action}",
+  "@proxySuggestedAction": {
+    "placeholders": {
+      "action": {"type": "String"}
+    }
+  },
+  "proxyReason": "[Proxy] Reason: {reason}",
+  "@proxyReason": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "proxyMaliciousInstruction": "[Proxy] Malicious Instruction: {instruction}",
+  "@proxyMaliciousInstruction": {
+    "placeholders": {
+      "instruction": {"type": "String"}
+    }
+  },
+  "proxyTraceableQuote": "[Proxy] Traceable Quote: {quote}",
+  "@proxyTraceableQuote": {
+    "placeholders": {
+      "quote": {"type": "String"}
+    }
+  },
+  "proxyBlocking": "[Proxy] *** BLOCKING REQUEST *** Risk detected!",
+  "proxyWarning": "[Proxy] *** WARNING *** Potential risk, but allowing request",
+  "proxyAllowed": "[Proxy] *** ALLOWED *** Request is safe",
+  "proxyRestartingGateway": "[Proxy] Restarting openclaw gateway...",
+  "proxyGatewayRestartError": "[Proxy] Gateway restart error: {error}",
+  "@proxyGatewayRestartError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyGatewayRestartSuccess": "[Proxy] Gateway restarted successfully",
+  "proxyGatewayRestartSkippedAppstore": "[Proxy] Gateway restart skipped (App Store build)",
+  "proxyServerError": "[Proxy] Server error: {error}",
+  "@proxyServerError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyStarted": "[Proxy] Started on port {port}, forwarding to {target} (provider: {provider})",
+  "@proxyStarted": {
+    "placeholders": {
+      "port": {"type": "int"},
+      "target": {"type": "String"},
+      "provider": {"type": "String"}
+    }
+  },
+  "proxyConfigUpdateFailed": "[Proxy] Warning: failed to update config: {error}",
+  "@proxyConfigUpdateFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyConfigUpdated": "[Proxy] Updated {provider} provider baseUrl to {url}",
+  "@proxyConfigUpdated": {
+    "placeholders": {
+      "provider": {"type": "String"},
+      "url": {"type": "String"}
+    }
+  },
+  "configUpdated": "Configuration updated successfully",
+  "proxyGatewayRestartFailed": "[Proxy] Warning: failed to restart gateway: {error}",
+  "@proxyGatewayRestartFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyStopping": "[Proxy] Stopping...",
+  "proxyConfigRestoreFailed": "[Proxy] Warning: failed to restore config: {error}",
+  "@proxyConfigRestoreFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyConfigRestored": "[Proxy] Restored {provider} provider baseUrl to {url}",
+  "@proxyConfigRestored": {
+    "placeholders": {
+      "provider": {"type": "String"},
+      "url": {"type": "String"}
+    }
+  },
+  "proxyStopped": "[Proxy] Stopped",
+
+  "protectionAgentAnalyzing": "[Protection Agent] Analyzing {count} messages...",
+  "@protectionAgentAnalyzing": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "protectionAgentSendingLLM": "[Protection Agent] Sending to LLM for analysis...",
+  "protectionAgentError": "[Protection Agent] Error: {error}",
+  "@protectionAgentError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "protectionAgentRawResponse": "[Protection Agent] Raw response: {response}",
+  "@protectionAgentRawResponse": {
+    "placeholders": {
+      "response": {"type": "String"}
+    }
+  },
+  "protectionAgentWarning": "[Protection Agent] Warning: {warning}",
+  "@protectionAgentWarning": {
+    "placeholders": {
+      "warning": {"type": "String"}
+    }
+  },
+  "protectionAgentResult": "[Protection Agent] Risk Level: {level}, Confidence: {confidence}%",
+  "@protectionAgentResult": {
+    "placeholders": {
+      "level": {"type": "String"},
+      "confidence": {"type": "int"}
+    }
+  },
+  "protectionAgentReason": "[Protection Agent] Reason: {reason}",
+  "@protectionAgentReason": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "protectionAgentSuggestedAction": "[Protection Agent] Suggested Action: {action}",
+  "@protectionAgentSuggestedAction": {
+    "placeholders": {
+      "action": {"type": "String"}
+    }
+  },
+
+  "toolValidatorBlocked": "[Tool Validator] *** BLOCKED *** {reason}",
+  "@toolValidatorBlocked": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "toolValidatorPassed": "[Tool Validator] ✓ Passed: {toolName}",
+  "@toolValidatorPassed": {
+    "placeholders": {
+      "toolName": {"type": "String"}
+    }
+  },
+
+  "dartAnalysisError": "[Analysis] Error: {error}",
+  "@dartAnalysisError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "eventAnalysisError": "Analysis error: {error}",
+  "@eventAnalysisError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "eventAnalysisCancelled": "Analysis cancelled",
+  "eventProxyStopped": "Protection proxy stopped",
+  "eventRequestBlocked": "Request blocked",
+  "eventSecurityWarning": "Security warning",
+  "eventRequestAllowed": "Request allowed",
+  "eventAnalysisStarted": "Analysis started",
+  "eventToolCallsDetected": "Tool calls detected",
+  "eventToolBlocked": "Tool call blocked [{status}]: {reason}",
+  "@eventToolBlocked": {
+    "placeholders": {
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolWarning": "Tool call warning [{status}]: {reason}",
+  "@eventToolWarning": {
+    "placeholders": {
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolWarningAudit": "Tool call risk (Audit mode) [{status}]: {reason}",
+  "@eventToolWarningAudit": {
+    "placeholders": {
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolAllowed": "Tool call allowed: {reason}",
+  "@eventToolAllowed": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolBlockedWithRisk": "Tool call blocked <{riskTag}> [{status}]: {reason}",
+  "@eventToolBlockedWithRisk": {
+    "placeholders": {
+      "riskTag": {"type": "String"},
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolWarningWithRisk": "Tool call warning <{riskTag}> [{status}]: {reason}",
+  "@eventToolWarningWithRisk": {
+    "placeholders": {
+      "riskTag": {"type": "String"},
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolWarningAuditWithRisk": "Tool call risk (Audit) <{riskTag}> [{status}]: {reason}",
+  "@eventToolWarningAuditWithRisk": {
+    "placeholders": {
+      "riskTag": {"type": "String"},
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolAllowedWithRisk": "Tool call allowed <{riskTag}>: {reason}",
+  "@eventToolAllowedWithRisk": {
+    "placeholders": {
+      "riskTag": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventQuotaExceeded": "Quota exceeded [{limitType}]: {current}/{limit}",
+  "@eventQuotaExceeded": {
+    "placeholders": {
+      "limitType": {"type": "String"},
+      "current": {"type": "int"},
+      "limit": {"type": "int"}
+    }
+  },
+  "eventServerError": "Server error: {error}",
+  "@eventServerError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+
+  "totalTokens": "Total Tokens",
+  "promptTokens": "Prompt Tokens",
+  "completionTokens": "Completion Tokens",
+  "toolCallCount": "Tool Calls",
+  "tokenTrend": "Token Trend",
+  "toolCallTrend": "Tool Call Trend",
+  "noDataYet": "No data yet",
+  "analysisTokens": "Analysis Total Tokens",
+  "analysisPromptTokens": "Analysis Prompt Tokens",
+  "analysisCompletionTokens": "Analysis Completion Tokens",
+  "analysisTokenTooltip": "Token consumption from security analysis (not included in main business flow)",
+
+  "protectionConfigTitle": "Protection Config",
+  "securityPromptTab": "Smart Rules",
+  "tokenLimitTab": "Token Limit",
+  "permissionTab": "Perms",
+  "botModelTab": "Bot Model",
+  "customSecurityPromptTitle": "Custom Security Prompt",
+  "customSecurityPromptDesc": "Configure security rules you care about, which will be prioritized during protection analysis",
+  "customSecurityPromptPlaceholder": "Examples:\n- Deny access to /etc/passwd file\n- Block rm -rf commands\n- Block access to sensitive directory /home/user/.ssh/\n- Focus on database connection operations",
+  "customSecurityPromptTip": "Your input will be wrapped in <USER_DEFINED></USER_DEFINED> tags and appended to the analysis system prompt. The model will prioritize your security rules during analysis.",
+  "tokenLimitTitle": "Token Usage Limit",
+  "tokenLimitDesc": "Configure token usage limits. The proxy will terminate the session when limits are exceeded",
+  "singleSessionTokenLimit": "Single Session Token Limit",
+  "singleSessionTokenLimitPlaceholder": "Leave empty or 0 for no limit",
+  "dailyTokenLimit": "Daily Token Limit",
+  "dailyTokenLimitPlaceholder": "Leave empty or 0 for no limit",
+  "tokenLimitTip": "When token usage exceeds the configured limit, the proxy will return an over-limit error and terminate the current session to prevent excessive resource consumption.",
+  "tokenUnitK": "K",
+  "tokenUnitM": "M",
+  "tokenPresetLabel": "Quick select",
+  "tokenNoLimit": "No limit",
+  "tokenPreset50K": "50K",
+  "tokenPreset100K": "100K",
+  "tokenPreset300K": "300K",
+  "tokenPreset500K": "500K",
+  "tokenPreset1M": "1M",
+  "tokenPreset10M": "10M",
+  "tokenPreset50M": "50M",
+  "tokenPreset100M": "100M",
+  "pathPermissionTitle": "Path Access Permission",
+  "pathPermissionDesc": "Configure allowed or denied file paths for the proxied agent",
+  "pathPermissionPlaceholder": "e.g.: /etc/passwd, /home/user/.ssh/",
+  "networkPermissionTitle": "Network Access Permission",
+  "networkPermissionDesc": "Configure allowed or denied network segments and domains",
+  "networkPermissionDescSandbox": "Sandbox mode only supports * (all addresses) or localhost as host",
+  "networkPermissionPlaceholder": "e.g.: 192.168.1.0/24, *.internal.com",
+  "networkPermissionPlaceholderSandbox": "e.g.: *:*, localhost:8080, localhost:*",
+  "networkAddressInvalidForSandbox": "Sandbox limitation: host must be * or localhost, specific IPs, CIDR and domains are not supported",
+  "networkOutboundTitle": "Outbound",
+  "networkOutboundDesc": "Control outgoing connections initiated by the process",
+  "networkInboundTitle": "Inbound",
+  "networkInboundDesc": "Control incoming connections to the process",
+  "shellPermissionTitle": "Shell Command Permission",
+  "shellPermissionDesc": "Configure allowed or denied shell commands",
+  "shellPermissionPlaceholder": "e.g.: rm, chmod, sudo",
+  "blacklistMode": "Blacklist",
+  "whitelistMode": "Whitelist",
+  "permissionNote": "Note: Permission configuration requires sandbox protection to be enabled. When enabled, the gateway process runs in a restricted environment.",
+  "shepherdRulesTab": "User Rules",
+  "shepherdRulesTitle": "User Defined Rules",
+  "shepherdRulesDesc": "Configure tool call blacklist and sensitive actions for enhanced protection",
+  "shepherdBlacklistTitle": "Tool Call Blacklist",
+  "shepherdBlacklistDesc": "Forbidden tool names, e.g., delete_user, drop_table",
+  "shepherdBlacklistPlaceholder": "Enter tool name, press Enter to add",
+  "shepherdSensitiveTitle": "Need User Confirmation",
+  "shepherdSensitiveDesc": "Define sensitive actions, e.g., delete, remove",
+  "shepherdSensitivePlaceholder": "Enter keyword, press Enter to add",
+  "shepherdRulesTip": "These rules directly apply to ShepherdGate protection logic and affect all requests.",
+  "securitySkillsTitle": "Security Skills",
+  "securitySkillsDesc": "Built-in security guard skills, automatically applied to tool call risk analysis",
+  "sandboxProtection": "Sandbox Protection",
+  "sandboxProtectionDesc": "restrict gateway process system resource access, enforcing permission configuration rules",
+  "saveConfig": "Save Config",
+  "configSavedRestartRequired": "Config saved, restart protection to apply new settings",
+  "restartNow": "Restart Now",
+  "restarting": "Restarting...",
+  "protectionConfigBtn": "Config",
+
+  "auditLogTitle": "Audit Log",
+  "auditLogTotal": "Analyzed",
+  "auditLogRisk": "Audit Blocked",
+  "auditLogBlocked": "Blocked",
+  "auditLogWarned": "Warned",
+  "auditLogAllowed": "Allowed",
+  "auditLogSearchHint": "Search logs...",
+  "auditLogRiskOnly": "Risk Only",
+  "auditLogNoLogs": "No audit logs",
+  "auditLogRefresh": "Refresh",
+  "auditLogClearAll": "Clear All",
+  "auditLogClearConfirmTitle": "Clear All Logs",
+  "auditLogClearConfirmMessage": "Are you sure you want to clear all audit logs? This action cannot be undone.",
+  "auditLogCancel": "Cancel",
+  "auditLogClear": "Clear",
+  "auditLogDetail": "Log Detail",
+  "auditLogId": "Log ID",
+  "auditLogTimestamp": "Timestamp",
+  "auditLogRequestId": "Request ID",
+  "auditLogModel": "Model",
+  "auditLogAction": "Action",
+  "auditLogRiskLevel": "Risk Level",
+  "auditLogConfidence": "Confidence",
+  "auditLogRiskReason": "Risk Reason",
+  "auditLogDuration": "Duration",
+  "auditLogTokens": "Tokens",
+  "auditLogRequestContent": "User Request",
+  "auditLogToolCalls": "Tool Calls",
+  "auditLogOutputContent": "Final Response",
+  "auditLogToolArguments": "Arguments",
+  "auditLogToolResult": "Result",
+  "auditLogSensitive": "SENSITIVE",
+  "auditLogPageInfo": "Page {current} of {total}",
+  "@auditLogPageInfo": {
+    "placeholders": {
+      "current": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "auditLogActionAllow": "Allowed",
+  "auditLogActionWarn": "Risk",
+  "auditLogActionBlock": "Blocked",
+  "auditLogActionHardBlock": "Hard Block",
+  "auditLogBlocked": "Blocked Count",
+  "auditLogRisk": "Risk Count",
+  "auditLogAllowed": "Allowed Count",
+
+  "initializingProtectionMonitor": "Initializing Protection Monitor",
+  "initDatabase": "Initializing database",
+  "startCallbackBridge": "Starting callback bridge",
+  "loadStatistics": "Loading statistics",
+  "startListener": "Starting listener service",
+  "initFailed": "Initialization failed: {error}",
+  "@initFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "configureAiModelFirst": "Please configure AI model first (click the settings icon)",
+  "welcomeSlogan": "Welcome to ClawdSecbot, guardian of your AI bots",
+  "authDeniedExit": "Directory access denied. The app will exit.",
+  "onboardingScanReady": "Onboarding complete. You can start scanning.",
+  "onboardingProtectionEnabled": "Protection is enabled. Onboarding completed.",
+  "onboardingCongratsTitle": "All set!",
+  "onboardingPersonalDone": "Onboarding complete. Returning to main page...",
+  "onboardingTitle": "Quick Start",
+  "onboardingStepModelTitle": "Configure Proxy Model",
+  "onboardingStepModelDesc": "Set up the model used by the proxy service",
+  "onboardingStepProxyTitle": "Start Proxy Service",
+  "onboardingStepProxyDesc": "Start the local proxy and create a listener",
+  "onboardingStepConnectivityTitle": "Update Bot Config",
+  "onboardingStepConnectivityDesc": "Update bot config and verify proxy connectivity",
+  "onboardingActionConfigureModel": "Configure Proxy Model",
+  "onboardingActionStartProxy": "Start Proxy",
+  "onboardingActionExecuteCommand": "Run Command",
+  "onboardingActionCopyCommand": "Copy Command",
+  "onboardingActionCopyPrompt": "Copy Prompt",
+  "onboardingCommandResultTitle": "Command output",
+  "onboardingCommandSuccess": "Command completed successfully",
+  "onboardingActionBack": "Back",
+  "onboardingActionNext": "Next",
+  "onboardingActionSaveNext": "Save and Next",
+  "onboardingActionFinish": "Finish",
+  "onboardingActionSaveFinish": "Save and Finish",
+  "onboardingActionEnterApp": "Enter Main Page",
+  "onboardingWelcomeTitle": "Welcome",
+  "onboardingWelcomeDesc": "Complete the steps below to start using the security features.",
+  "onboardingQuickStartTitle": "Core Features",
+  "onboardingQuickStartDesc": "Welcome to Aglaugus, the guardian of the AI Bot era.",
+  "onboardingFeatureInjectTitle": "Real-time Protection & Intent Detection",
+  "onboardingFeatureInjectDesc": "Continuously monitors bot conversations and commands, identifies risks like injection, bypass, and malicious guidance; detects business intent deviation; automatically blocks/challenges/restricts high-risk requests to ensure operation within security boundaries.",
+  "onboardingFeaturePermissionTitle": "Permission Configuration & Tool/Skill Management",
+  "onboardingFeaturePermissionDesc": "Provides fine-grained permissions for bot tools/plugins/skills: available capabilities, scenarios, parameter limits; high-risk operations (such as sensitive data access, batch changes) require dedicated risk control and secondary confirmation to reduce misuse and abuse risks.",
+  "onboardingFeatureBaselineTitle": "Protection Monitoring & Audit Traceability",
+  "onboardingFeatureBaselineDesc": "Unified dashboard displays bot protection status, risk events, block/alert records; completely retains key conversations, tool calls, risk control decisions, supports post-event auditing, behavior tracing, and accountability.",
+  "onboardingSecurityModelTitle": "Security Model Configuration",
+  "onboardingSecurityModelDesc": "ClawdSecbot provides a local security proxy for your Bot interactions, focusing on external tool call risks. We do not collect or store personal data; all configuration and control stay with you.",
+  "onboardingBotModelTitle": "Bot Model Registration",
+  "onboardingBotModelDesc": "ClawdSecbot builds the security proxy using your registered Bot model info and securely forwards requests to the original model to ensure tasks complete.",
+  "onboardingConfigUpdateTitle": "Bot Configuration Update",
+  "onboardingConfigUpdateDesc": "Due to Apple software guidelines, you need to update the configuration to openclaw.json",
+  "onboardingConfigUpdateInstruction": "Open the web configuration page, find Settings-Config-Models on the left sidebar",
+  "onboardingConfigUpdateComplete": "Complete",
+  "onboardingReuseBotModel": "Reuse Bot Model Configuration",
+  "onboardingReuseBotModelHint": "Use the same model configuration as Bot for security detection",
+  "onboardingFinishTitle": "All Set",
+  "onboardingFinishDesc": "Basic setup is complete. Enter the main page to get started.",
+  "onboardingStatusConfigured": "Configured",
+  "onboardingStatusPending": "Pending",
+  "onboardingStatusProxyStarted": "Proxy started",
+  "onboardingStatusProxyNotStarted": "Proxy not started",
+  "onboardingStatusWaitingCallback": "Waiting for callback",
+  "onboardingStatusCallbackReceived": "Callback received",
+  "onboardingProxyServiceStatus": "Proxy service status",
+  "onboardingProxyCallbackStatus": "Callback status",
+  "onboardingProxyPortLabel": "Proxy port",
+  "onboardingProxyPortInvalid": "Invalid proxy port",
+  "onboardingProxyStarting": "Starting",
+  "onboardingProxyStartedMessage": "Proxy started on port {port}",
+  "@onboardingProxyStartedMessage": {
+    "placeholders": {
+      "port": {"type": "int"}
+    }
+  },
+  "onboardingProxyCommandLabel": "Command",
+  "onboardingProxyCommandDesc": "Update bot config",
+  "onboardingProxyPromptLabel": "Prompt",
+  "onboardingProxyPromptDesc": "Have OpenClaw execute the prompt and callback the model config to ClawdSecbot",
+  "onboardingConnectivityHint": "After updating config, send a message in OpenClaw, e.g. \"hello\"",
+  "onboardingConnectivityStatus": "Connectivity status",
+  "onboardingConnectivityWaiting": "Waiting for message...",
+  "onboardingConnectivityDetected": "Message detected",
+  "proxyTokenUsage": "[Proxy] Token usage: prompt={promptTokens}, completion={completionTokens}, total={totalTokens}",
+  "@proxyTokenUsage": {
+    "placeholders": {
+      "promptTokens": {"type": "int"},
+      "completionTokens": {"type": "int"},
+      "totalTokens": {"type": "int"}
+    }
+  },
+
+  "configAccessTitle": "Directory Access Required",
+  "configAccessMessage": "To read/write protected folders such as Documents, Desktop, and Downloads, the app needs access to your Home directory (~).",
+  "configAccessPaths": "Authorized access includes:",
+  "selectDirectory": "Authorize Home Directory",
+  "cancel": "Cancel",
+
+  "clearData": "Clear Data",
+  "clearDataConfirmTitle": "Clear Data",
+  "clearDataConfirmMessage": "Are you sure you want to clear all logs, token statistics and analysis data? This will not delete model configuration and protection configuration. This action cannot be undone.",
+  "clearDataSuccess": "Data cleared successfully",
+  "clearDataFailed": "Failed to clear data",
+
+  "auditOnlyMode": "Audit Only Mode",
+  "auditOnlyModeDesc": "No risk analysis, only record audit logs",
+  "auditOnlyModeShort": "Audit Only",
+  "auditOnlyModePendingHint": "Analysis in progress, changes will take effect after completion",
+
+  "appStoreGuideTitle": "Configuration Guide",
+  "appStoreGuideDesc": "Please copy the prompt below and run it in OpenClaw.",
+  "appStoreGuideCopied": "Copied to clipboard",
+  "appStoreGuideCopy": "Copy",
+  "appStoreGuideReceived": "Configuration Received",
+  "appStoreGuideWaiting": "Waiting for connection...",
+  "appStoreGuideProxyStarting": "Starting proxy service...",
+  "appStoreGuideContinueHint": "The app will automatically continue once configured.",
+
+  "scanStartTitle": "Asset Scan",
+  "scanStartDesc": "Ready to start scanning for assets.",
+  "scanStartAuthRequired": "Authorization Required",
+  "scanStartAuthDesc": "Access to the configuration directory is required to proceed.",
+  "scanStartAuthBtn": "Authorize Home Directory",
+  "scanStartBtn": "Start Asset Scan",
+
+  "newVersionAvailable": "New Version Available",
+  "versionAvailable": "Version {version} is now available.",
+  "@versionAvailable": {
+    "placeholders": {
+      "version": {"type": "String"}
+    }
+  },
+  "download": "Download",
+  "later": "Later",
+
+  "restoreConfig": "Restore Initial Config",
+  "restoreConfigConfirmTitle": "Restore Initial Configuration",
+  "restoreConfigConfirmMessage": "Are you sure you want to restore to initial configuration? This will:\n\n1. Stop current protection\n2. Restore openclaw.json to the state before first protection\n3. Restart openclaw gateway\n\nThis action cannot be undone.",
+  "restoreConfigSuccess": "Configuration restored to initial state",
+  "restoreConfigFailed": "Failed to restore configuration: {error}",
+  "@restoreConfigFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "restoreConfigNoBackup": "Initial backup not found, cannot restore",
+  "restoreConfigDescription": "Restore to state before first launch",
+  "restoringConfig": "Restoring configuration...",
+  "generalSettings": "General",
+  "dataManagement": "Data Management",
+  "clearDataDescription": "Clear logs, statistics and analysis data",
+  "permissionsSection": "Permissions",
+  "dataSecurity": "Data Security",
+  "dataExfiltrationRisk": "Data Exfiltration Risk",
+  "sensitiveAccessRisk": "Sensitive Access Risk",
+  "emailDeleteRisk": "Email Delete Risk",
+  "promptInjectionRisk": "Prompt Injection Risk",
+  "scriptExecutionRisk": "Script Execution Risk",
+  "generalToolRisk": "General Tool Risk",
+  "skillAnalysis": "Analyzed by skill: {skillName}",
+  "@skillAnalysis": {
+    "placeholders": {
+      "skillName": {"type": "String"}
+    }
+  },
+  "skillNameDataExfiltrationGuard": "Data Exfiltration Guard",
+  "skillNameFileAccessGuard": "File Access Guard",
+  "skillNameEmailDeleteGuard": "Email Delete Guard",
+  "skillNamePromptInjectionGuard": "Prompt Injection Guard",
+  "skillNameScriptExecutionGuard": "Script Execution Guard",
+  "skillNameGeneralToolRiskGuard": "General Tool Risk Guard",
+  "securityEvents": "Security Events",
+  "noSecurityEvents": "No security events",
+  "securityEventDetail": "Security Event Detail",
+  "eventBlocked": "Blocked",
+  "eventToolExecution": "Tool Execution",
+  "eventOther": "Other Event",
+  "eventTime": "Time",
+  "eventActionDesc": "Action",
+  "eventRiskType": "Risk Type",
+  "eventSource": "Source",
+  "eventSourceAgent": "AI Analysis Engine",
+  "eventSourceHeuristic": "Heuristic Detection",
+  "eventType": "Event Type",
+  "eventDetail": "Detail",
+  "copyEventInfo": "Copy Event Info",
+  "refresh": "Refresh",
+  "clearAll": "Clear All",
+  "viewSkillScanResults": "Skill Scan Results",
+  "viewSkillScanResultsTitle": "Skill Scan Results",
+  "noSkillScanResults": "No skill scan results yet",
+  "skillScanResultScannedAt": "Scanned: {time}",
+  "@skillScanResultScannedAt": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "skillScanResultIssueCount": "{count} issue(s)",
+  "@skillScanResultIssueCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  }
+}

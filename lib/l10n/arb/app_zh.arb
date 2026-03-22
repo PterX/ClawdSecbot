@@ -1,0 +1,1012 @@
+{
+  "@@locale": "zh",
+  "appTitle": "ClawdSecbot",
+  "showWindow": "显示窗口",
+  "exit": "退出",
+  "idleTitle": "ClawdSecbot 安全卫士",
+  "idleSubtitle": "扫描您的 Clawdbot 配置以查找安全风险",
+  "startScan": "开始安全扫描",
+  "scanning": "扫描中...",
+  "scanComplete": "扫描完成",
+  "rescan": "重新扫描",
+  "rescanConfirmTitle": "确认重新扫描",
+  "rescanConfirmMessage": "当前有 {count} 个Bot资产正在防护中。重新扫描将停止所有已开启的防护。是否继续？",
+  "@rescanConfirmMessage": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "continueButton": "继续",
+  "checkingProtectionStatus": "检查防护状态中...",
+  "configuration": "配置信息",
+  "status": "状态",
+  "found": "已找到",
+  "notFound": "未找到",
+  "path": "路径",
+  "gatewayConfiguration": "网关配置",
+  "noGatewayConfig": "未找到网关配置",
+  "port": "端口",
+  "bind": "绑定地址",
+  "auth": "认证",
+  "controlUi": "控制界面",
+  "enabled": "已启用",
+  "disabled": "已禁用",
+  "securityFindings": "安全发现",
+  "noSecurityIssues": "未发现安全问题",
+  "secureConfigMessage": "您的 Clawdbot 配置看起来很安全！",
+  "testGoIntegration": "测试 Go 集成",
+  "goIntegrationTest": "Go 集成测试",
+  "close": "关闭",
+  "errorCallingGo": "调用 Go 出错: {error}",
+  "@errorCallingGo": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settings": "设置",
+  "language": "语言",
+  "switchLanguage": "切换语言",
+
+  "riskNonLoopbackBinding": "非回环地址绑定",
+  "riskNonLoopbackBindingDesc": "网关绑定到 \"{bind}\"，这允许外部访问。建议仅绑定到 127.0.0.1。",
+  "@riskNonLoopbackBindingDesc": {
+    "placeholders": {
+      "bind": {
+        "type": "String"
+      }
+    }
+  },
+  "riskNoAuth": "未配置认证",
+  "riskNoAuthDesc": "网关未启用认证。任何拥有网络访问权限的人都可以连接。",
+  "riskWeakPassword": "认证密码太弱",
+  "riskWeakPasswordDesc": "密码长度小于 12 个字符。请使用更强的密码。",
+  "riskAllPluginsAllowed": "允许所有插件",
+  "riskAllPluginsAllowedDesc": "启用了通配符插件权限。这可能允许不受信任的代码执行。",
+  "riskControlUiEnabled": "控制界面已启用",
+  "riskControlUiEnabledDesc": "Web 控制界面已启用。请确保其已正确加固。",
+  "riskRunningAsRoot": "以 root 身份运行",
+  "riskRunningAsRootDesc": "应用程序正在以 root 权限运行。这增加了攻击面。",
+  
+  "riskConfigPermUnsafe": "配置文件权限不安全",
+  "riskConfigPermUnsafeDesc": "配置文件权限为 {current}，期望为 600。请运行 chmod 600 {path} 修复。",
+  "@riskConfigPermUnsafeDesc": {
+    "placeholders": {
+      "path": {"type": "String"},
+      "current": {"type": "String"}
+    }
+  },
+  "riskConfigDirPermUnsafe": "配置目录权限不安全",
+  "riskConfigDirPermUnsafeDesc": "配置目录权限为 {current}，期望为 700。请运行 chmod 700 {path} 修复。",
+  "@riskConfigDirPermUnsafeDesc": {
+    "placeholders": {
+      "path": {"type": "String"},
+      "current": {"type": "String"}
+    }
+  },
+  "riskSandboxDisabledDefault": "默认沙箱已禁用",
+  "riskSandboxDisabledDefaultDesc": "默认沙箱模式设置为 'none'。建议启用沙箱隔离。",
+  "riskSandboxDisabledAgent": "Agent 沙箱已禁用",
+  "riskSandboxDisabledAgentDesc": "Agent '{agent}' 的沙箱模式设置为 'none'.",
+  "@riskSandboxDisabledAgentDesc": {
+    "placeholders": {
+      "agent": {"type": "String"}
+    }
+  },
+  "riskLoggingRedactOff": "敏感数据脱敏已禁用",
+  "riskLoggingRedactOffDesc": "日志脱敏设置为 'off'。可能导致敏感数据泄露到日志中。",
+  "riskLogDirPermUnsafe": "日志目录权限不安全",
+  "riskLogDirPermUnsafeDesc": "日志目录权限不安全，期望为 700。",
+  "riskPlaintextSecrets": "配置文件中发现明文密钥",
+  "riskPlaintextSecretsDesc": "在配置文件中发现潜在的明文密钥 (匹配模式: {pattern})。请使用环境变量或密钥管理工具。",
+  "@riskPlaintextSecretsDesc": {
+    "placeholders": {
+      "pattern": {"type": "String"}
+    }
+  },
+
+  "riskOneClickRce": "1-click RCE 远程代码执行漏洞",
+  "riskOneClickRceDesc": "OpenClaw存在严重的1-click RCE漏洞（CVSS 10.0），攻击者可通过诱导用户访问恶意网站完成远程代码执行。受影响版本：< 2026.1.24-1，当前版本：{version}。建议立即升级至最新版本。",
+  "@riskOneClickRceDesc": {
+    "placeholders": {
+      "version": {"type": "String"}
+    }
+  },
+
+  "riskSkillsNotScanned": "Skills 未进行提示词注入扫描",
+  "riskSkillsNotScannedDesc": "{count} 个 Skill 尚未进行提示词注入风险扫描: {skills}。点击执行扫描。",
+  "@riskSkillsNotScannedDesc": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "skills": {"type": "String"}
+    }
+  },
+
+  "riskSkillSecurityIssue": "风险技能: {skillName}",
+  "@riskSkillSecurityIssue": {
+    "placeholders": {
+      "skillName": {"type": "String"}
+    }
+  },
+  "riskSkillSecurityIssueDesc": "技能 \"{skillName}\" 存在 {issueCount} 个安全问题。建议删除此技能。",
+  "@riskSkillSecurityIssueDesc": {
+    "placeholders": {
+      "skillName": {"type": "String"},
+      "issueCount": {"type": "int"}
+    }
+  },
+
+  "riskLevelLow": "低",
+  "riskLevelMedium": "中",
+  "riskLevelHigh": "高",
+  "riskLevelCritical": "严重",
+
+  "detectedAssets": "检测到的Bot",
+  "assetName": "Bot名称",
+  "assetType": "Bot类型",
+  "version": "版本",
+  "serviceName": "服务名称",
+  "processPaths": "进程路径",
+  "metadata": "元数据",
+  "mitigate": "修复",
+  "fixApplied": "修复成功",
+  "cancel": "取消",
+  "aiModelConfig": "AI模型配置",
+
+  "skillScanTitle": "AI 技能安全分析",
+  "skillScanScanning": "正在扫描",
+  "skillScanCompleted": "扫描完成",
+  "skillScanPreparing": "准备中...",
+  "skillScanConfigError": "请先配置 AI 模型",
+  "skillScanAllSafe": "所有技能通过安全检查",
+  "skillScanRiskDetected": "检测到风险",
+  "skillScanIssues": "个问题",
+  "skillScanDelete": "删除",
+  "skillScanDeleted": "已删除",
+  "skillScanTrust": "信任",
+  "skillScanTrusted": "已信任",
+  "skillScanTrustTitle": "信任技能",
+  "skillScanTrustConfirm": "确定信任 \"{skillName}\" 吗？信任后该技能的风险将不再显示在主界面。",
+  "@skillScanTrustConfirm": {
+    "placeholders": {
+      "skillName": {"type": "String"}
+    }
+  },
+  "skillScanFailed": "扫描失败 - 下次扫描时将重试",
+  "skillScanDeleteTitle": "删除技能",
+  "skillScanDeleteConfirm": "确定要删除 \"{skillName}\" 吗？此操作不可撤销。",
+  "@skillScanDeleteConfirm": {
+    "placeholders": {
+      "skillName": {"type": "String"}
+    }
+  },
+  "skillScanDone": "完成",
+  "skillScanFailedLoadConfig": "加载配置失败: {error}",
+  "@skillScanFailedLoadConfig": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "skillScanScanningSkill": "扫描技能: {skillName}",
+  "@skillScanScanningSkill": {
+    "placeholders": {
+      "skillName": {"type": "String"}
+    }
+  },
+  "skillScanRiskDetectedLog": "检测到风险: {summary}",
+  "@skillScanRiskDetectedLog": {
+    "placeholders": {
+      "summary": {"type": "String"}
+    }
+  },
+  "skillScanSkillSafe": "技能安全",
+  "skillScanErrorScanning": "扫描技能出错: {error}",
+  "@skillScanErrorScanning": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "skillScanAnalysisComplete": "--- 分析完成 ---",
+  "skillScanSafe": "安全",
+  "skillScanRiskLevel": "风险等级",
+  "skillScanSummary": "分析摘要",
+  "skillScanIssueType": "类型",
+  "skillScanIssueSeverity": "严重程度",
+  "skillScanIssueFile": "文件",
+  "skillScanIssueDesc": "描述",
+  "skillScanIssueEvidence": "证据",
+  "skillScanTypePromptInjection": "提示词注入",
+  "skillScanTypeDataTheft": "数据窃取",
+  "skillScanTypeCodeExecution": "代码执行",
+  "skillScanTypeSocialEngineering": "社会工程",
+  "skillScanTypeSupplyChain": "供应链攻击",
+  "skillScanTypeOther": "其他风险",
+  "skillScanNoSkills": "没有发现需要扫描的技能",
+
+  "modelConfigTitle": "安全模型",
+  "modelConfigProvider": "模型供应商",
+  "modelConfigEndpoint": "端点地址",
+  "modelConfigEndpointId": "端点 ID",
+  "modelConfigBaseUrl": "基础 URL",
+  "modelConfigBaseUrlOptional": "基础 URL (可选)",
+  "modelConfigApiKey": "API 密钥",
+  "modelConfigAccessKey": "访问密钥",
+  "modelConfigSecretKey": "密钥",
+  "modelConfigModelName": "模型名称",
+  "modelConfigSave": "保存",
+  "modelConfigFillRequired": "请填写所有必填字段",
+  "modelConfigSaveFailed": "保存配置失败",
+  "modelConfigRequired": "请先配置 AI 模型才能继续使用",
+  "modelConfigTesting": "测试连接中...",
+  "modelConfigSaving": "保存中...",
+  "modelConfigTestFailed": "连接测试失败: {error}",
+  "@modelConfigTestFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+
+  "oneClickProtection": "一键防护",
+  "protectionMonitor": "防护监控",
+  "protectionStarting": "防护启动中...",
+  "launchAtStartup": "开机自启",
+  "auditLog": "审计日志",
+  "protectionConfirmTitle": "开启防护",
+  "protectionConfirmMessage": "开启防护会对智能体行为实时分析，保障您的设备安全",
+  "protectionConfirmButton": "确认开启",
+  "protectionMonitorTitle": "防护监控中心",
+  "protectionStatus": "防护状态",
+  "protectionActive": "防护中",
+  "protectionInactive": "未防护",
+  "behaviorAnalysis": "行为分析",
+  "threatDetection": "威胁检测",
+  "realTimeMonitor": "实时监控",
+  "noThreatsDetected": "暂无威胁检测",
+  "allSystemsNormal": "所有系统运行正常",
+
+  "proxyStarting": "正在启动保护代理...",
+  "proxyStartingDesc": "正在读取配置并启动代理服务器",
+  "proxyStartFailed": "启动失败",
+  "retry": "重试",
+  "analyzing": "分析中...",
+  "analysisCount": "分析次数",
+  "messageCountLabel": "消息数量",
+  "warningCountLabel": "警告次数",
+  "blockedCount": "拦截次数",
+  "analysisLogs": "分析日志",
+  "clear": "清空",
+  "waitingLogs": "等待分析日志...",
+  "securityEvents": "安全事件",
+  "noSecurityEvents": "暂无安全事件",
+  "latestResult": "最新分析结果",
+  "maliciousDetected": "检测到恶意指令:",
+
+  "dartProxyStarting": "[保护代理] 正在启动代理...",
+  "dartProxyStarted": "[保护代理] 已在端口 {port} 启动, 提供者: {provider}",
+  "@dartProxyStarted": {
+    "placeholders": {
+      "port": {"type": "int"},
+      "provider": {"type": "String"}
+    }
+  },
+  "dartProxyFailed": "[保护代理] 启动失败: {error}",
+  "@dartProxyFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "dartProxyError": "[保护代理] 错误: {error}",
+  "@dartProxyError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "dartProxyStopping": "[保护代理] 正在停止代理...",
+  "dartProxyStopped": "[保护代理] 已停止",
+  "eventProxyStarting": "正在启动保护代理",
+  "eventProxyStarted": "代理已在端口 {port} 启动, 提供者: {provider}",
+  "@eventProxyStarted": {
+    "placeholders": {
+      "port": {"type": "int"},
+      "provider": {"type": "String"}
+    }
+  },
+  "eventProxyError": "启动代理失败: {error}",
+  "@eventProxyError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "eventProxyException": "启动代理异常: {error}",
+  "@eventProxyException": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+
+  "proxyNewRequest": "[代理] ========== 新请求 ==========",
+  "proxyRequestInfo": "[代理] 请求: 模型={model}, 消息数={messageCount}, 流式={stream}",
+  "@proxyRequestInfo": {
+    "placeholders": {
+      "model": {"type": "String"},
+      "messageCount": {"type": "int"},
+      "stream": {"type": "String"}
+    }
+  },
+  "proxyMessageInfo": "[代理] 消息[{index}] 角色={role}: {content}",
+  "@proxyMessageInfo": {
+    "placeholders": {
+      "index": {"type": "int"},
+      "role": {"type": "String"},
+      "content": {"type": "String"}
+    }
+  },
+  "proxyToolActivityDetected": "[代理] ========== 请求中检测到工具活动 ==========",
+  "proxyToolCallsFound": "[代理] 发现 {toolCount} 个工具调用, {resultCount} 个工具结果",
+  "@proxyToolCallsFound": {
+    "placeholders": {
+      "toolCount": {"type": "int"},
+      "resultCount": {"type": "int"}
+    }
+  },
+  "proxyResponseNonStream": "[代理] ========== 响应 (非流式) ==========",
+  "proxyResponseInfo": "[代理] 响应: 模型={model}, 选项数={choiceCount}",
+  "@proxyResponseInfo": {
+    "placeholders": {
+      "model": {"type": "String"},
+      "choiceCount": {"type": "int"}
+    }
+  },
+  "proxyResponseContent": "[代理] 响应内容: {content}",
+  "@proxyResponseContent": {
+    "placeholders": {
+      "content": {"type": "String"}
+    }
+  },
+  "proxyToolCallsDetected": "[代理] ========== 检测到工具调用 ==========",
+  "proxyToolCallCount": "[代理] 工具调用数量: {count}",
+  "@proxyToolCallCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "proxyToolCallName": "[代理] 工具调用[{index}]: {name}",
+  "@proxyToolCallName": {
+    "placeholders": {
+      "index": {"type": "int"},
+      "name": {"type": "String"}
+    }
+  },
+  "proxyToolCallArgs": "[代理] 工具调用[{index}] 参数: {args}",
+  "@proxyToolCallArgs": {
+    "placeholders": {
+      "index": {"type": "int"},
+      "args": {"type": "String"}
+    }
+  },
+  "proxyStartingAnalysis": "[代理] ========== 开始分析 ==========",
+  "proxyStreamFinished": "[代理] ========== 流式结束 (原因={reason}) ==========",
+  "@proxyStreamFinished": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "proxyToolCallsInStream": "[代理] ========== 流式中检测到工具调用 ==========",
+  "proxyStreamContentNoTools": "[代理] 流式内容 (无工具调用): {content}",
+  "@proxyStreamContentNoTools": {
+    "placeholders": {
+      "content": {"type": "String"}
+    }
+  },
+  "proxyAgentNotAvailable": "[代理] 防护代理不可用，允许请求",
+  "proxySendingAnalysis": "[代理] 发送到防护代理进行分析...",
+  "proxyOriginalTask": "[代理] 原始用户任务: {task}",
+  "@proxyOriginalTask": {
+    "placeholders": {
+      "task": {"type": "String"}
+    }
+  },
+  "proxyMessageCountLog": "[代理] 消息数量: {count}",
+  "@proxyMessageCountLog": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "proxyAnalyzeMessage": "[代理] 分析消息[{index}] 角色={role}: {content}",
+  "@proxyAnalyzeMessage": {
+    "placeholders": {
+      "index": {"type": "int"},
+      "role": {"type": "String"},
+      "content": {"type": "String"}
+    }
+  },
+  "proxyAnalysisError": "[代理] 分析错误: {error}，允许请求",
+  "@proxyAnalysisError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyAnalysisResult": "[代理] ========== 分析结果 ==========",
+  "proxyRiskLevel": "[代理] 风险等级: {level}",
+  "@proxyRiskLevel": {
+    "placeholders": {
+      "level": {"type": "String"}
+    }
+  },
+  "proxyConfidence": "[代理] 置信度: {confidence}%",
+  "@proxyConfidence": {
+    "placeholders": {
+      "confidence": {"type": "int"}
+    }
+  },
+  "proxySuggestedAction": "[代理] 建议操作: {action}",
+  "@proxySuggestedAction": {
+    "placeholders": {
+      "action": {"type": "String"}
+    }
+  },
+  "proxyReason": "[代理] 原因: {reason}",
+  "@proxyReason": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "proxyMaliciousInstruction": "[代理] 恶意指令: {instruction}",
+  "@proxyMaliciousInstruction": {
+    "placeholders": {
+      "instruction": {"type": "String"}
+    }
+  },
+  "proxyTraceableQuote": "[代理] 可追溯引用: {quote}",
+  "@proxyTraceableQuote": {
+    "placeholders": {
+      "quote": {"type": "String"}
+    }
+  },
+  "proxyBlocking": "[代理] *** 拦截请求 *** 检测到风险!",
+  "proxyWarning": "[代理] *** 警告 *** 存在潜在风险，但允许请求",
+  "proxyAllowed": "[代理] *** 允许 *** 请求安全",
+  "proxyRestartingGateway": "[代理] 正在重启 openclaw 网关...",
+  "proxyGatewayRestartError": "[代理] 网关重启错误: {error}",
+  "@proxyGatewayRestartError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyGatewayRestartSuccess": "[代理] 网关重启成功",
+  "proxyGatewayRestartSkippedAppstore": "[代理] 跳过网关重启 (App Store 版本)",
+  "proxyServerError": "[代理] 服务器错误: {error}",
+  "@proxyServerError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyStarted": "[代理] 已在端口 {port} 启动, 转发至 {target} (提供商: {provider})",
+  "@proxyStarted": {
+    "placeholders": {
+      "port": {"type": "int"},
+      "target": {"type": "String"},
+      "provider": {"type": "String"}
+    }
+  },
+  "proxyConfigUpdateFailed": "[代理] 警告: 配置更新失败: {error}",
+  "@proxyConfigUpdateFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyConfigUpdated": "[代理] 已更新 {provider} 提供商 baseUrl 为 {url}",
+  "@proxyConfigUpdated": {
+    "placeholders": {
+      "provider": {"type": "String"},
+      "url": {"type": "String"}
+    }
+  },
+  "configUpdated": "配置更新成功",
+  "proxyGatewayRestartFailed": "[代理] 警告: 网关重启失败: {error}",
+  "@proxyGatewayRestartFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyStopping": "[代理] 正在停止...",
+  "proxyConfigRestoreFailed": "[代理] 警告: 配置恢复失败: {error}",
+  "@proxyConfigRestoreFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "proxyConfigRestored": "[代理] 已恢复 {provider} 提供商 baseUrl 为 {url}",
+  "@proxyConfigRestored": {
+    "placeholders": {
+      "provider": {"type": "String"},
+      "url": {"type": "String"}
+    }
+  },
+  "proxyStopped": "[代理] 已停止",
+
+  "protectionAgentAnalyzing": "[防护代理] 正在分析 {count} 条消息...",
+  "@protectionAgentAnalyzing": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "protectionAgentSendingLLM": "[防护代理] 发送到 LLM 进行分析...",
+  "protectionAgentError": "[防护代理] 错误: {error}",
+  "@protectionAgentError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "protectionAgentRawResponse": "[防护代理] 原始响应: {response}",
+  "@protectionAgentRawResponse": {
+    "placeholders": {
+      "response": {"type": "String"}
+    }
+  },
+  "protectionAgentWarning": "[防护代理] 警告: {warning}",
+  "@protectionAgentWarning": {
+    "placeholders": {
+      "warning": {"type": "String"}
+    }
+  },
+  "protectionAgentResult": "[防护代理] 风险等级: {level}, 置信度: {confidence}%",
+  "@protectionAgentResult": {
+    "placeholders": {
+      "level": {"type": "String"},
+      "confidence": {"type": "int"}
+    }
+  },
+  "protectionAgentReason": "[防护代理] 原因: {reason}",
+  "@protectionAgentReason": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "protectionAgentSuggestedAction": "[防护代理] 建议操作: {action}",
+  "@protectionAgentSuggestedAction": {
+    "placeholders": {
+      "action": {"type": "String"}
+    }
+  },
+
+  "toolValidatorBlocked": "[工具验证] *** 拦截 *** {reason}",
+  "@toolValidatorBlocked": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "toolValidatorPassed": "[工具验证] ✓ 通过: {toolName}",
+  "@toolValidatorPassed": {
+    "placeholders": {
+      "toolName": {"type": "String"}
+    }
+  },
+
+  "dartAnalysisError": "[分析] 错误: {error}",
+  "@dartAnalysisError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "eventAnalysisError": "分析错误: {error}",
+  "@eventAnalysisError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "eventAnalysisCancelled": "分析已取消",
+  "eventProxyStopped": "保护代理已停止",
+  "eventRequestBlocked": "请求已拦截",
+  "eventSecurityWarning": "安全警告",
+  "eventRequestAllowed": "请求已允许",
+  "eventAnalysisStarted": "开始分析",
+  "eventToolCallsDetected": "检测到工具调用",
+  "eventToolBlocked": "工具调用已拦截 [{status}]: {reason}",
+  "@eventToolBlocked": {
+    "placeholders": {
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolWarning": "工具调用警告 [{status}]: {reason}",
+  "@eventToolWarning": {
+    "placeholders": {
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolWarningAudit": "工具调用风险(审计模式) [{status}]: {reason}",
+  "@eventToolWarningAudit": {
+    "placeholders": {
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolAllowed": "工具调用已放行: {reason}",
+  "@eventToolAllowed": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolBlockedWithRisk": "工具调用已拦截 <{riskTag}> [{status}]: {reason}",
+  "@eventToolBlockedWithRisk": {
+    "placeholders": {
+      "riskTag": {"type": "String"},
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolWarningWithRisk": "工具调用警告 <{riskTag}> [{status}]: {reason}",
+  "@eventToolWarningWithRisk": {
+    "placeholders": {
+      "riskTag": {"type": "String"},
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolWarningAuditWithRisk": "工具调用风险(审计) <{riskTag}> [{status}]: {reason}",
+  "@eventToolWarningAuditWithRisk": {
+    "placeholders": {
+      "riskTag": {"type": "String"},
+      "status": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventToolAllowedWithRisk": "工具调用已放行 <{riskTag}>: {reason}",
+  "@eventToolAllowedWithRisk": {
+    "placeholders": {
+      "riskTag": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
+  "eventQuotaExceeded": "配额超限 [{limitType}]: {current}/{limit}",
+  "@eventQuotaExceeded": {
+    "placeholders": {
+      "limitType": {"type": "String"},
+      "current": {"type": "int"},
+      "limit": {"type": "int"}
+    }
+  },
+  "eventServerError": "服务器错误: {error}",
+  "@eventServerError": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+
+  "totalTokens": "Token总量",
+  "promptTokens": "输入Token",
+  "completionTokens": "输出Token",
+  "toolCallCount": "工具调用",
+  "tokenTrend": "Token消耗趋势",
+  "toolCallTrend": "工具调用趋势",
+  "noDataYet": "暂无数据",
+  "analysisTokens": "防护Token总量",
+  "analysisPromptTokens": "防护输入Token",
+  "analysisCompletionTokens": "防护输出Token",
+  "analysisTokenTooltip": "此部分为安全防护分析产生的Token消耗，不计入主要业务流程",
+
+  "protectionConfigTitle": "防护配置",
+  "securityPromptTab": "智能规则",
+  "tokenLimitTab": "Token限制",
+  "permissionTab": "权限设置",
+  "botModelTab": "Bot模型",
+  "customSecurityPromptTitle": "自定义安全提示词",
+  "customSecurityPromptDesc": "配置您关注的安全规则，防护分析时将优先考虑这些规则",
+  "customSecurityPromptPlaceholder": "例如：\n- 禁止访问 /etc/passwd 文件\n- 禁止执行 rm -rf 命令\n- 禁止访问敏感目录 /home/user/.ssh/\n- 重点关注数据库连接相关操作",
+  "customSecurityPromptTip": "您输入的内容将被包裹在 <USER_DEFINED></USER_DEFINED> 标签中，追加到分析系统提示词后面，模型分析时会以您关注的安全规则为主。",
+  "tokenLimitTitle": "Token使用限制",
+  "tokenLimitDesc": "配置Token使用上限，超过限制时代理将终止会话",
+  "singleSessionTokenLimit": "单轮会话Token上限",
+  "singleSessionTokenLimitPlaceholder": "留空或0表示不限制",
+  "dailyTokenLimit": "当日总Token上限",
+  "dailyTokenLimitPlaceholder": "留空或0表示不限制",
+  "tokenLimitTip": "当Token使用超过设定上限时，代理会返回超限错误并终止当前会话，防止过度消耗资源。",
+  "tokenUnitK": "千",
+  "tokenUnitM": "百万",
+  "tokenPresetLabel": "快捷选择",
+  "tokenNoLimit": "不限制",
+  "tokenPreset50K": "5万",
+  "tokenPreset100K": "10万",
+  "tokenPreset300K": "30万",
+  "tokenPreset500K": "50万",
+  "tokenPreset1M": "100万",
+  "tokenPreset10M": "1000万",
+  "tokenPreset50M": "5000万",
+  "tokenPreset100M": "1亿",
+  "pathPermissionTitle": "路径访问权限",
+  "pathPermissionDesc": "配置允许或禁止被代理的智能体访问的文件路径",
+  "pathPermissionPlaceholder": "例如: /etc/passwd, /home/user/.ssh/",
+  "networkPermissionTitle": "网络访问权限",
+  "networkPermissionDesc": "配置允许或禁止访问的网段、域名",
+  "networkPermissionDescSandbox": "沙箱模式下仅支持 *（所有地址）或 localhost 作为主机",
+  "networkPermissionPlaceholder": "例如: 192.168.1.0/24, *.internal.com",
+  "networkPermissionPlaceholderSandbox": "例如: *:*, localhost:8080, localhost:*",
+  "networkAddressInvalidForSandbox": "沙箱模式限制：主机只能为 * 或 localhost，不支持具体IP地址、CIDR或域名",
+  "networkOutboundTitle": "出栈 (Outbound)",
+  "networkOutboundDesc": "控制进程主动发起的对外连接",
+  "networkInboundTitle": "入栈 (Inbound)",
+  "networkInboundDesc": "控制外部对进程发起的连接",
+  "shellPermissionTitle": "Shell命令权限",
+  "shellPermissionDesc": "配置允许或禁止执行的Shell命令",
+  "shellPermissionPlaceholder": "例如: rm, chmod, sudo",
+  "blacklistMode": "黑名单",
+  "whitelistMode": "白名单",
+  "permissionNote": "注意：权限设置功能需要启用沙箱防护才能生效。启用后，网关进程将在受限环境中运行。",
+  "shepherdRulesTab": "用户规则",
+  "shepherdRulesTitle": "用户自定义规则",
+  "shepherdRulesDesc": "配置工具调用黑名单和敏感操作，用于增强防护",
+  "shepherdBlacklistTitle": "工具调用黑名单",
+  "shepherdBlacklistDesc": "禁止调用的工具名称，例如：delete_user, drop_table",
+  "shepherdBlacklistPlaceholder": "输入工具名称，回车添加",
+  "shepherdSensitiveTitle": "需要用户确认",
+  "shepherdSensitiveDesc": "定义哪些操作属于敏感操作，例如：delete, remove",
+  "shepherdSensitivePlaceholder": "输入敏感操作关键词，回车添加",
+  "shepherdRulesTip": "这些规则将直接应用于 ShepherdGate 防护逻辑，对所有请求生效。",
+  "securitySkillsTitle": "安全技能",
+  "securitySkillsDesc": "系统内置的安全防护技能，自动应用于工具调用风险分析",
+  "sandboxProtection": "沙箱防护",
+  "sandboxProtectionDesc": "限制网关进程的系统资源访问，强制执行权限设置规则",
+  "saveConfig": "保存配置",
+  "configSavedRestartRequired": "配置已保存，需要重启防护以应用新配置",
+  "restartNow": "立即重启",
+  "restarting": "正在重启...",
+  "protectionConfigBtn": "防护配置",
+
+  "auditLogTitle": "审计日志",
+  "auditLogTotal": "分析次数",
+  "auditLogRisk": "审计拦截",
+  "auditLogBlocked": "拦截次数",
+  "auditLogWarned": "警告",
+  "auditLogAllowed": "已允许",
+  "auditLogSearchHint": "搜索日志...",
+  "auditLogRiskOnly": "仅显示风险",
+  "auditLogNoLogs": "暂无审计日志",
+  "auditLogRefresh": "刷新",
+  "auditLogClearAll": "清空全部",
+  "auditLogClearConfirmTitle": "清空所有日志",
+  "auditLogClearConfirmMessage": "确定要清空所有审计日志吗？此操作无法撤销。",
+  "auditLogCancel": "取消",
+  "auditLogClear": "清空",
+  "auditLogDetail": "日志详情",
+  "auditLogId": "日志 ID",
+  "auditLogTimestamp": "时间",
+  "auditLogRequestId": "请求 ID",
+  "auditLogModel": "模型",
+  "auditLogAction": "动作",
+  "auditLogRiskLevel": "风险等级",
+  "auditLogConfidence": "置信度",
+  "auditLogRiskReason": "风险原因",
+  "auditLogDuration": "耗时",
+  "auditLogTokens": "Token数",
+  "auditLogRequestContent": "用户请求",
+  "auditLogToolCalls": "工具调用",
+  "auditLogOutputContent": "最终响应内容",
+  "auditLogToolArguments": "参数",
+  "auditLogToolResult": "结果",
+  "auditLogSensitive": "敏感",
+  "auditLogPageInfo": "第 {current} 页，共 {total} 页",
+  "@auditLogPageInfo": {
+    "placeholders": {
+      "current": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "auditLogActionAllow": "已允许",
+  "auditLogActionWarn": "有风险",
+  "auditLogActionBlock": "已拦截",
+  "auditLogActionHardBlock": "强制拦截",
+  "auditLogBlocked": "拦截次数",
+  "auditLogRisk": "风险次数",
+  "auditLogAllowed": "允许次数",
+
+  "initializingProtectionMonitor": "正在初始化防护监控",
+  "initDatabase": "初始化数据库",
+  "startCallbackBridge": "启动通信桥接",
+  "loadStatistics": "加载统计数据",
+  "startListener": "启动监听服务",
+  "initFailed": "初始化失败: {error}",
+  "@initFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "configureAiModelFirst": "请先配置 AI 模型（点击左下角设置图标）",
+  "welcomeSlogan": "欢迎使用 ClawdSecbot, 专注于 AI Bot 的安全防护",
+  "authDeniedExit": "未授权目录访问，应用将退出",
+  "onboardingScanReady": "引导已完成，可以开始扫描",
+  "onboardingProtectionEnabled": "已完成首次引导",
+  "onboardingCongratsTitle": "恭喜",
+  "onboardingPersonalDone": "引导完成，正在返回主页面...",
+  "onboardingTitle": "快速开始",
+  "onboardingStepModelTitle": "配置代理模型",
+  "onboardingStepModelDesc": "配置用于代理服务的模型",
+  "onboardingStepProxyTitle": "启动代理服务",
+  "onboardingStepProxyDesc": "启动本地代理并创建监听",
+  "onboardingStepConnectivityTitle": "修改Bot配置",
+  "onboardingStepConnectivityDesc": "更新Bot配置并验证代理联通性",
+  "onboardingActionConfigureModel": "配置代理模型",
+  "onboardingActionStartProxy": "启动Proxy",
+  "onboardingActionExecuteCommand": "执行命令",
+  "onboardingActionCopyCommand": "复制命令",
+  "onboardingActionCopyPrompt": "复制提示词",
+  "onboardingCommandResultTitle": "执行结果",
+  "onboardingCommandSuccess": "命令执行成功",
+  "onboardingActionBack": "上一步",
+  "onboardingActionNext": "下一步",
+  "onboardingActionSaveNext": "保存并下一步",
+  "onboardingActionFinish": "完成引导",
+  "onboardingActionSaveFinish": "保存并完成",
+  "onboardingActionEnterApp": "进入主页面",
+  "onboardingWelcomeTitle": "欢迎使用",
+  "onboardingWelcomeDesc": "完成以下引导后即可开始使用安全防护能力。",
+  "onboardingQuickStartTitle": "核心功能一览",
+  "onboardingQuickStartDesc": "ClawdSecbot —— AI Bot 时代的守护神",
+  "onboardingFeatureInjectTitle": "实时防护与意图偏离检测",
+  "onboardingFeatureInjectDesc": "持续监听 Bot 对话与指令,识别注入、绕过、恶意引导等风险;判断业务意图偏离;高危请求自动拦截/质询/降权,确保安全边界内运行。",
+  "onboardingFeaturePermissionTitle": "权限设置与工具/技能管控",
+  "onboardingFeaturePermissionDesc": "为 Bot 工具/插件/技能提供细粒度权限:可用能力、场景、参数上限;高危操作(如敏感数据访问、批量变更)设专属风控与二次确认,降低误用滥用风险。",
+  "onboardingFeatureBaselineTitle": "防护监控与审计追溯",
+  "onboardingFeatureBaselineDesc": "统一面板展示 Bot 防护状态、风险事件、拦截/告警记录;完整留存关键对话、工具调用、风控决策,支持事后审计、行为追溯与追责。",
+  "onboardingSecurityModelTitle": "安全模型配置",
+  "onboardingSecurityModelDesc": "ClawdSecbot 会在本机为您的 Bot 交互提供安全代理,重点分析外部工具调用风险.我们不会收集或保存您的个人隐私数据,所有配置与控制权都在您手中.",
+  "onboardingBotModelTitle": "Bot模型登记",
+  "onboardingBotModelDesc": "ClawdSecbot 会通过您登记的 Bot 模型信息来建立安全代理,并将请求安全转发至原始模型,确保各项任务正常完成.",
+  "onboardingConfigUpdateTitle": "Bot配置更新",
+  "onboardingConfigUpdateDesc": "由于 Apple 的系统安全规范限制, ClawdSecbot 无法直接修改其他应用的配置文件. 请按照提示手动更新 openclaw.json 使配置更新.",
+  "onboardingConfigUpdateInstruction": "打开web页面配置框，找到左侧Settings-Config-Models",
+  "onboardingConfigUpdateComplete": "完成",
+  "onboardingReuseBotModel": "复用Bot模型配置",
+  "onboardingReuseBotModelHint": "使用与Bot相同的模型配置作为安全检测模型",
+  "onboardingFinishTitle": "恭喜完成",
+  "onboardingFinishDesc": "基础配置已完成，进入主页面开始使用。",
+  "onboardingStatusConfigured": "已完成配置",
+  "onboardingStatusPending": "待完成",
+  "onboardingStatusProxyStarted": "代理已启动",
+  "onboardingStatusProxyNotStarted": "代理未启动",
+  "onboardingStatusWaitingCallback": "等待回调确认",
+  "onboardingStatusCallbackReceived": "已收到回调",
+  "onboardingProxyServiceStatus": "代理服务状态",
+  "onboardingProxyCallbackStatus": "回调状态",
+  "onboardingProxyPortLabel": "代理端口",
+  "onboardingProxyPortInvalid": "代理端口无效",
+  "onboardingProxyStarting": "启动中",
+  "onboardingProxyStartedMessage": "代理服务已启动，监听端口: {port}",
+  "@onboardingProxyStartedMessage": {
+    "placeholders": {
+      "port": {"type": "int"}
+    }
+  },
+  "onboardingProxyCommandLabel": "执行命令",
+  "onboardingProxyCommandDesc": "更新Bot配置",
+  "onboardingProxyPromptLabel": "提示词",
+  "onboardingProxyPromptDesc": "让OpenClaw执行提示词并把模型配置回调给 ClawdSecbot",
+  "onboardingConnectivityHint": "更新配置后，在OpenClaw中发送一条消息，例如：\"hello\"",
+  "onboardingConnectivityStatus": "联通性状态",
+  "onboardingConnectivityWaiting": "等待检测消息...",
+  "onboardingConnectivityDetected": "已检测到消息",
+  "proxyTokenUsage": "[代理] Token使用: 输入={promptTokens}, 输出={completionTokens}, 总计={totalTokens}",
+  "@proxyTokenUsage": {
+    "placeholders": {
+      "promptTokens": {"type": "int"},
+      "completionTokens": {"type": "int"},
+      "totalTokens": {"type": "int"}
+    }
+  },
+
+  "configAccessTitle": "需要目录访问权限",
+  "configAccessMessage": "为了读取/写入 Documents、Desktop、Downloads 等受保护文件夹，应用需要授权访问您的主目录 (~).",
+  "configAccessPaths": "授权后可访问目录：",
+  "selectDirectory": "授权主目录",
+  "cancel": "取消",
+
+  "clearData": "清空数据",
+  "clearDataConfirmTitle": "清空数据",
+  "clearDataConfirmMessage": "确定要清空所有日志、Token统计和分析数据吗？此操作不会删除模型配置和防护配置等运行时数据。此操作无法撤销。",
+  "clearDataSuccess": "数据已清空",
+  "clearDataFailed": "清空数据失败",
+
+  "auditOnlyMode": "仅审计模式",
+  "auditOnlyModeDesc": "不进行风险研判，仅记录审计日志",
+  "auditOnlyModeShort": "仅审计",
+  "auditOnlyModePendingHint": "正在研判中，变更将在研判结束后生效",
+
+  "appStoreGuideTitle": "配置引导",
+  "appStoreGuideDesc": "请复制以下提示词并在 OpenClaw 中执行。",
+  "appStoreGuideCopied": "已复制到剪贴板",
+  "appStoreGuideCopy": "复制",
+  "appStoreGuideReceived": "配置已接收",
+  "appStoreGuideWaiting": "等待连接...",
+  "appStoreGuideProxyStarting": "代理服务启动中，请稍候...",
+  "appStoreGuideContinueHint": "配置完成后应用将自动继续。",
+
+  "scanStartTitle": "资产扫描",
+  "scanStartDesc": "准备开始扫描资产。",
+  "scanStartAuthRequired": "需要授权",
+  "scanStartAuthDesc": "需要访问配置目录的权限才能继续。",
+  "scanStartAuthBtn": "授权主目录",
+  "scanStartBtn": "开始资产扫描",
+
+  "newVersionAvailable": "发现新版本",
+  "versionAvailable": "版本 {version} 现已发布。",
+  "@versionAvailable": {
+    "placeholders": {
+      "version": {"type": "String"}
+    }
+  },
+  "download": "下载",
+  "later": "稍后",
+
+  "restoreConfig": "恢复初始配置",
+  "restoreConfigConfirmTitle": "恢复初始配置",
+  "restoreConfigConfirmMessage": "确定要恢复到初始配置吗？这将:\n\n1. 停止当前防护\n2. 恢复 openclaw.json 到首次启动防护前的状态\n3. 重启 openclaw 网关\n\n此操作无法撤销。",
+  "restoreConfigSuccess": "配置已恢复到初始状态",
+  "restoreConfigFailed": "恢复配置失败: {error}",
+  "@restoreConfigFailed": {
+    "placeholders": {
+      "error": {"type": "String"}
+    }
+  },
+  "restoreConfigNoBackup": "初始备份不存在，无法恢复",
+  "restoreConfigDescription": "恢复到首次启动前的状态",
+  "restoringConfig": "正在恢复配置...",
+  "generalSettings": "通用设置",
+  "dataManagement": "数据管理",
+  "clearDataDescription": "清除日志、统计和分析数据",
+  "permissionsSection": "权限",
+  "dataSecurity": "数据安全",
+  "dataExfiltrationRisk": "数据外泄风险",
+  "sensitiveAccessRisk": "敏感访问风险",
+  "emailDeleteRisk": "邮件删除风险",
+  "promptInjectionRisk": "提示注入风险",
+  "scriptExecutionRisk": "脚本执行风险",
+  "generalToolRisk": "通用工具风险",
+  "skillAnalysis": "基于智能技能 {skillName} 分析",
+  "@skillAnalysis": {
+    "placeholders": {
+      "skillName": {"type": "String"}
+    }
+  },
+  "skillNameDataExfiltrationGuard": "数据泄露防护",
+  "skillNameFileAccessGuard": "文件访问防护",
+  "skillNameEmailDeleteGuard": "邮件删除防护",
+  "skillNamePromptInjectionGuard": "提示注入防护",
+  "skillNameScriptExecutionGuard": "脚本执行防护",
+  "skillNameGeneralToolRiskGuard": "通用工具风险防护",
+  "securityEvents": "安全事件",
+  "noSecurityEvents": "暂无安全事件",
+  "securityEventDetail": "安全事件详情",
+  "eventBlocked": "已拦截",
+  "eventToolExecution": "工具执行",
+  "eventOther": "其他事件",
+  "eventTime": "时间",
+  "eventActionDesc": "动作描述",
+  "eventRiskType": "风险类型",
+  "eventSource": "来源",
+  "eventSourceAgent": "AI 分析引擎",
+  "eventSourceHeuristic": "启发式检测",
+  "eventType": "事件类型",
+  "eventDetail": "详细信息",
+  "copyEventInfo": "复制事件信息",
+  "refresh": "刷新",
+  "clearAll": "清空",
+  "viewSkillScanResults": "技能检测结果",
+  "viewSkillScanResultsTitle": "技能检测结果",
+  "noSkillScanResults": "暂无技能扫描记录",
+  "skillScanResultScannedAt": "扫描时间: {time}",
+  "@skillScanResultScannedAt": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "skillScanResultIssueCount": "{count} 个问题",
+  "@skillScanResultIssueCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  }
+}

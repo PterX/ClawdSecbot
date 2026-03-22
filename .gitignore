@@ -1,0 +1,97 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Go build artifacts
+go_lib/plugins/**/*.so
+go_lib/plugins/**/*.dylib
+go_lib/plugins/**/*.dll
+go_lib/plugins/**/*.h
+go_lib/openclaw.dylib
+go_lib/openclaw.h
+go_lib/**/*.dylib
+go_lib/**/*.so
+go_lib/**/*.dll
+go_lib/**/*.h
+go_lib/**/*.a
+!go_lib/core/sandbox/windows_hook/hooks.h
+!go_lib/core/sandbox/windows_hook/policy.h
+plugins/*
+build/
+go_lib/botsec.dylib
+go_lib/botsec.h
+
+# Platform-specific build artifacts
+macos/Runner/*.dylib
+macos/Runner/libgo_lib.h
+macos/Runner/openclaw.h
+linux/runner/*.so
+windows/runner/*.dll
+pubspec.lock
+pubspec.lock
+backups/
+
+# SecbotPlatform (官网，仅本地保留)
+SecbotPlatform/
+
+# Docker 配置（仅本地保留）
+docker/
+
+# Runtime generated skills (embedded in binary)
+skills/
+
+# Runtime state
+.openclaw/workspace-state.json
+
+.qoder/
+.trae/
+.vscode/
+.idea
+.dart_tool/
+.openclaw/
+docs/
+go_lib/go_lib
+.gocache-linux/
+.gocache-windows

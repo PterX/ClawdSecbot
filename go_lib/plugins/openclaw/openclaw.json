@@ -1,0 +1,24 @@
+[
+  {
+    "code": "openclaw_gateway_active",
+    "name": "Port and Process Detection",
+    "life_cycle": 1,
+    "os": ["darwin", "linux", "windows"],
+    "desc": "Detects active Openclaw Gateway via Port and Process",
+    "expression": {
+      "lang": "json_match",
+      "expr": "{\"ports\": [18789], \"process_keywords\": [\"openclaw\", \"moltbot\"]}"
+    }
+  },
+  {
+    "code": "openclaw_config_exist",
+    "name": "Config File Detection",
+    "life_cycle": 2,
+    "os": ["darwin", "linux", "windows"],
+    "desc": "Detects Openclaw presence via Config File",
+    "expression": {
+      "lang": "json_match",
+      "expr": "{\"file_paths\": [\"~/.openclaw\", \"~/.moltbot\", \"~/.clawdbot\"]}"
+    }
+  }
+]

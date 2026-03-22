@@ -1,0 +1,115 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'go_lib/**'
+      - 'lib/**'
+      - 'windows/**'
+      - 'images/**'
+      - 'pubspec.yaml'
+      - 'scripts/build_windows_release.ps1'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'go_lib/**'
+      - 'lib/**'
+      - 'windows/**'
+      - 'images/**'
+      - 'pubspec.yaml'
+
+jobs:
+  build-go:
+    name: Go Build & Test (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go_lib/go.mod
+
+      - name: Build Go DLL
+        working-directory: go_lib
+        run: |
+          go build -buildvcs=false -o botsec.dll -buildmode=c-shared .
+
+      - name: Run Go tests
+        working-directory: go_lib
+        run: |
+          go test -count=1 -timeout 120s ./...
+
+      - name: Upload DLL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: botsec-dll
+          path: go_lib/botsec.dll
+          retention-days: 7
+
+  build-hook-dll:
+    name: Build Sandbox Hook DLL
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sandbox_hook.dll with CMake
+        working-directory: go_lib/core/sandbox/windows_hook
+        run: |
+          cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DENABLE_CUSTOM_COMPILER_FLAGS=Off
+          cmake --build build --config Release
+
+      - name: Find and upload hook DLL
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem -Path go_lib/core/sandbox/windows_hook/build -Recurse -Filter "sandbox_hook.dll" | Select-Object -First 1
+          if ($dll) {
+            Copy-Item $dll.FullName sandbox_hook.dll
+          } else {
+            Write-Error "sandbox_hook.dll not found"
+            exit 1
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-hook-dll
+          path: sandbox_hook.dll
+          retention-days: 7
+
+  build-flutter:
+    name: Flutter Build (Windows)
+    runs-on: windows-latest
+    needs: [build-go, build-hook-dll]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Download Go DLL artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: botsec-dll
+          path: plugins
+
+      - name: Download hook DLL artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sandbox-hook-dll
+          path: plugins
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      # Ensure exe shows project icon in Explorer (Runner.rc embeds app_icon.ico)
+      - name: Sync app icon for executable
+        shell: pwsh
+        run: |
+          if (Test-Path "images\tray_icon.ico") {
+            Copy-Item -Force "images\tray_icon.ico" "windows\runner\resources\app_icon.ico"
+            Write-Host "Synced app_icon.ico from tray_icon.ico"
+          }
+
+      - name: Build Windows app
+        run: flutter build windows --release --no-tree-shake-icons

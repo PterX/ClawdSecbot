@@ -1,0 +1,124 @@
+// Package service provides business services for bot model configuration.
+// BotModelConfig is stored as part of ProtectionConfig.
+package service
+
+import (
+	"encoding/json"
+
+	"go_lib/core/logging"
+	"go_lib/core/repository"
+)
+
+// SaveBotModelConfig stores bot model config by asset name + asset ID.
+// Internally it updates ProtectionConfig.BotModelConfig.
+func SaveBotModelConfig(jsonStr string) map[string]interface{} {
+	var input struct {
+		AssetName string `json:"asset_name"`
+		AssetID   string `json:"asset_id"`
+		Provider  string `json:"provider"`
+		BaseURL   string `json:"base_url"`
+		APIKey    string `json:"api_key"`
+		Model     string `json:"model"`
+		SecretKey string `json:"secret_key,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &input); err != nil {
+		logging.Error("Failed to parse bot model config JSON: %v", err)
+		return errorMessageResult("invalid JSON: " + err.Error())
+	}
+
+	if input.AssetName == "" {
+		return errorMessageResult("asset_name is required")
+	}
+
+	repo := repository.NewProtectionRepository(nil)
+
+	// Load existing protection config.
+	config, err := repo.GetProtectionConfig(input.AssetName, input.AssetID)
+	if err != nil {
+		logging.Error("Failed to get protection config: %v", err)
+		return errorResult(err)
+	}
+
+	// Create config row when absent.
+	if config == nil {
+		config = &repository.ProtectionConfig{
+			AssetName: input.AssetName,
+			AssetID:   input.AssetID,
+		}
+	}
+
+	// Update bot model config.
+	config.BotModelConfig = &repository.BotModelConfigData{
+		Provider:  input.Provider,
+		BaseURL:   input.BaseURL,
+		APIKey:    input.APIKey,
+		Model:     input.Model,
+		SecretKey: input.SecretKey,
+	}
+
+	// Persist.
+	if err := repo.SaveProtectionConfig(config); err != nil {
+		logging.Error("Failed to save protection config with bot model: %v", err)
+		return errorResult(err)
+	}
+
+	logging.Info("Bot model config saved via protection config: asset=%s (id=%s)", input.AssetName, input.AssetID)
+	return successResult()
+}
+
+// GetBotModelConfig loads bot model config for a specific asset instance.
+// Internally it reads from ProtectionConfig.BotModelConfig.
+func GetBotModelConfig(assetName string, assetID string) map[string]interface{} {
+	repo := repository.NewProtectionRepository(nil)
+	config, err := repo.GetProtectionConfig(assetName, assetID)
+	if err != nil {
+		logging.Error("Failed to get protection config: %v", err)
+		return errorResult(err)
+	}
+
+	if config == nil || config.BotModelConfig == nil {
+		return successDataResult(nil)
+	}
+
+	// Build response payload.
+	result := map[string]interface{}{
+		"asset_name": assetName,
+		"asset_id":   assetID,
+		"provider":   config.BotModelConfig.Provider,
+		"base_url":   config.BotModelConfig.BaseURL,
+		"api_key":    config.BotModelConfig.APIKey,
+		"model":      config.BotModelConfig.Model,
+		"secret_key": config.BotModelConfig.SecretKey,
+	}
+
+	return successDataResult(result)
+}
+
+// DeleteBotModelConfig deletes bot model config for a specific asset instance.
+// Internally it clears ProtectionConfig.BotModelConfig.
+func DeleteBotModelConfig(assetName string, assetID string) map[string]interface{} {
+	repo := repository.NewProtectionRepository(nil)
+
+	// Load existing protection config.
+	config, err := repo.GetProtectionConfig(assetName, assetID)
+	if err != nil {
+		logging.Error("Failed to get protection config: %v", err)
+		return errorResult(err)
+	}
+
+	if config == nil {
+		return successResult()
+	}
+
+	// Clear bot model config.
+	config.BotModelConfig = nil
+
+	// Persist.
+	if err := repo.SaveProtectionConfig(config); err != nil {
+		logging.Error("Failed to save protection config: %v", err)
+		return errorResult(err)
+	}
+
+	logging.Info("Bot model config deleted via protection config: asset=%s (id=%s)", assetName, assetID)
+	return successResult()
+}

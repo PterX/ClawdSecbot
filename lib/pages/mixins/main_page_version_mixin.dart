@@ -1,0 +1,251 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:ffi' as ffi;
+import 'dart:io' show Platform;
+import 'package:ffi/ffi.dart';
+import 'package:flutter/material.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../config/build_config.dart';
+import '../../l10n/app_localizations.dart';
+import '../../models/version_info.dart';
+import '../../services/message_bridge_service.dart';
+import '../../services/native_library_service.dart';
+import '../../utils/app_fonts.dart';
+import '../../utils/app_logger.dart';
+import '../main_page.dart';
+
+/// 版本检查 Mixin
+/// 负责版本更新检查、订阅和弹窗显示
+mixin MainPageVersionMixin on State<MainPage> {
+  // ============ 状态变量 ============
+  StreamSubscription<VersionInfo>? versionUpdateSubscription;
+  bool isUpdateDialogShown = false;
+
+  // ============ 版本检查方法 ============
+
+  /// 订阅版本更新回调
+  void subscribeVersionUpdates() {
+    versionUpdateSubscription?.cancel();
+    versionUpdateSubscription =
+        MessageBridgeService().versionUpdateStream.listen((versionInfo) {
+      if (mounted && !isUpdateDialogShown) {
+        showUpdateDialog(versionInfo);
+      }
+    });
+    appLogger.info('[MainPage] Subscribed to version update stream');
+  }
+
+  /// 启动版本检查服务（Go 层）
+  Future<void> startVersionCheckService() async {
+    // AppStore 版本禁用自动检查
+    if (BuildConfig.isAppStore) {
+      appLogger.info(
+        '[MainPage] AppStore version: automatic update check disabled',
+      );
+      return;
+    }
+
+    try {
+      // 获取当前应用版本
+      final packageInfo = await PackageInfo.fromPlatform();
+      final currentVersion = packageInfo.version;
+
+      // 获取当前语言
+      String locale = 'en';
+      if (mounted) {
+        locale = Localizations.localeOf(context).languageCode;
+      }
+
+      // 获取系统信息
+      final os = _getOS();
+      final arch = _getArch();
+
+      final config = {
+        'current_version': currentVersion,
+        'os': os,
+        'arch': arch,
+        'language': locale,
+        'enabled': true,
+      };
+
+      final dylib = NativeLibraryService().dylib;
+      final freeStr = NativeLibraryService().freeString;
+      if (dylib != null && freeStr != null) {
+        final func = dylib.lookupFunction<
+            ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>),
+            ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>)>(
+          'StartVersionCheckServiceFFI',
+        );
+
+        final argPtr = jsonEncode(config).toNativeUtf8();
+        final resultPtr = func(argPtr);
+        final resultStr = resultPtr.toDartString();
+        freeStr(resultPtr);
+        malloc.free(argPtr);
+
+        final result = jsonDecode(resultStr);
+        if (result['success'] == true) {
+          appLogger.info('[MainPage] Version check service started');
+        } else {
+          appLogger.error(
+            '[MainPage] Version check service failed: ${result['error']}',
+          );
+        }
+      }
+    } catch (e) {
+      appLogger.error('[MainPage] Failed to start version check service', e);
+    }
+  }
+
+  /// 停止版本检查服务（Go 层）
+  Future<void> stopVersionCheckService() async {
+    try {
+      final dylib = NativeLibraryService().dylib;
+      final freeStr = NativeLibraryService().freeString;
+      if (dylib != null && freeStr != null) {
+        final func = dylib.lookupFunction<
+            ffi.Pointer<Utf8> Function(),
+            ffi.Pointer<Utf8> Function()>('StopVersionCheckServiceFFI');
+
+        final resultPtr = func();
+        final resultStr = resultPtr.toDartString();
+        freeStr(resultPtr);
+
+        appLogger.info('[MainPage] Version check service stopped: $resultStr');
+      }
+    } catch (e) {
+      appLogger.error('[MainPage] Failed to stop version check service', e);
+    }
+  }
+
+  /// 更新版本检查服务语言设置
+  Future<void> updateVersionCheckLanguage(String language) async {
+    try {
+      final dylib = NativeLibraryService().dylib;
+      final freeStr = NativeLibraryService().freeString;
+      if (dylib != null && freeStr != null) {
+        final func = dylib.lookupFunction<
+            ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>),
+            ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>)>(
+          'UpdateVersionCheckLanguageFFI',
+        );
+
+        final argPtr = language.toNativeUtf8();
+        final resultPtr = func(argPtr);
+        freeStr(resultPtr);
+        malloc.free(argPtr);
+
+        appLogger.info('[MainPage] Version check language updated: $language');
+      }
+    } catch (e) {
+      appLogger.error('[MainPage] Failed to update version check language', e);
+    }
+  }
+
+  /// 显示版本更新弹窗
+  void showUpdateDialog(VersionInfo info) {
+    if (isUpdateDialogShown) {
+      appLogger.info('[MainPage] Update dialog already shown, skipping');
+      return;
+    }
+    isUpdateDialogShown = true;
+    appLogger.info(
+      '[MainPage] Showing update dialog for version ${info.version}',
+    );
+
+    final l10n = AppLocalizations.of(context)!;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(LucideIcons.downloadCloud, color: Color(0xFF6366F1)),
+            SizedBox(width: 12),
+            Text(
+              l10n.newVersionAvailable,
+              style: AppFonts.inter(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l10n.versionAvailable(info.version),
+              style: AppFonts.inter(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                info.changeLog,
+                style: AppFonts.firaCode(color: Colors.white70, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          if (!info.forceUpdate)
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(l10n.later, style: TextStyle(color: Colors.white54)),
+            ),
+          ElevatedButton(
+            onPressed: () {
+              launchUrl(Uri.parse(info.downloadUrl));
+              if (info.forceUpdate) {
+                // 强制更新时保持弹窗
+              } else {
+                Navigator.pop(context);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6366F1),
+            ),
+            child: Text(l10n.download, style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    ).then((_) {
+      isUpdateDialogShown = false;
+    });
+  }
+
+  // ============ 辅助方法 ============
+
+  String _getOS() {
+    if (Platform.isMacOS) return 'macos';
+    if (Platform.isWindows) return 'windows';
+    if (Platform.isLinux) return 'linux';
+    return 'unknown';
+  }
+
+  String _getArch() {
+    final abi = ffi.Abi.current().toString();
+    if (abi.contains('arm64')) return 'arm64';
+    if (abi.contains('x64')) return 'amd64';
+    return 'amd64';
+  }
+
+  /// 释放版本检查资源
+  void disposeVersionMixin() {
+    versionUpdateSubscription?.cancel();
+  }
+}

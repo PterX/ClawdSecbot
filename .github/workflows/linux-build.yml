@@ -1,0 +1,104 @@
+name: Linux Build
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'go_lib/**'
+      - 'lib/**'
+      - 'linux/**'
+      - 'sandbox/**'
+      - 'images/**'
+      - 'pubspec.yaml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'go_lib/**'
+      - 'lib/**'
+      - 'linux/**'
+      - 'sandbox/**'
+      - 'images/**'
+      - 'pubspec.yaml'
+
+jobs:
+  build-go:
+    name: Go Build & Test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go_lib/go.mod
+
+      - name: Build Go shared library
+        working-directory: go_lib
+        run: |
+          CGO_ENABLED=1 go build -buildvcs=false -o botsec.so -buildmode=c-shared .
+          if [ -f "libbotsec.so" ] && [ ! -f "botsec.so" ]; then
+            mv libbotsec.so botsec.so
+          fi
+
+      - name: Run Go tests
+        working-directory: go_lib
+        run: |
+          go test -count=1 -timeout 120s ./...
+
+      - name: Upload shared library artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: botsec-so
+          path: go_lib/botsec.so
+          retention-days: 7
+
+  build-sandbox-preload:
+    name: Build Sandbox Preload Library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build libsandbox_preload.so with CMake
+        run: |
+          cmake -S sandbox -B sandbox/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build sandbox/build
+
+      - name: Upload preload library artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-preload-so
+          path: sandbox/build/libsandbox_preload.so
+          retention-days: 7
+
+  build-flutter:
+    name: Flutter Build (Linux)
+    runs-on: ubuntu-latest
+    needs: [build-go, build-sandbox-preload]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libayatana-appindicator3-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Download Go shared library artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: botsec-so
+          path: plugins
+
+      - name: Download sandbox preload artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sandbox-preload-so
+          path: plugins
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Linux app
+        run: flutter build linux --release --no-tree-shake-icons

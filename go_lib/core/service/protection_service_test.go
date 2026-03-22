@@ -1,0 +1,465 @@
+package service
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+// TestSaveProtectionState 验证保存保护状态
+func TestSaveProtectionState(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	input := `{
+		"enabled": true,
+		"provider_name": "openai",
+		"proxy_port": 8080,
+		"original_base_url": "https://api.openai.com/v1"
+	}`
+
+	result := SaveProtectionState(input)
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestGetProtectionState 验证获取保护状态
+func TestGetProtectionState(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	SaveProtectionState(`{
+		"enabled": true,
+		"provider_name": "openai",
+		"proxy_port": 9090
+	}`)
+
+	result := GetProtectionState()
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestClearProtectionState 验证清空保护状态
+func TestClearProtectionState(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	SaveProtectionState(`{"enabled": true, "provider_name": "test"}`)
+	result := ClearProtectionState()
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestSaveProtectionConfig 验证保存保护配置
+func TestSaveProtectionConfig(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	input := `{
+		"asset_name": "openclaw",
+		"enabled": true,
+		"audit_only": false,
+		"sandbox_enabled": true,
+		"custom_security_prompt": "test prompt"
+	}`
+
+	result := SaveProtectionConfig(input)
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestGetProtectionConfig 验证获取保护配置
+func TestGetProtectionConfig(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	SaveProtectionConfig(`{"asset_name": "openclaw", "enabled": true}`)
+
+	result := GetProtectionConfig("openclaw", "")
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestGetEnabledProtectionConfigs 验证获取启用的保护配置
+func TestGetEnabledProtectionConfigs(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	SaveProtectionConfig(`{"asset_name": "openclaw", "enabled": true}`)
+
+	result := GetEnabledProtectionConfigs()
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestGetActiveProtectionCount 验证获取正在防护中的资产数量
+func TestGetActiveProtectionCount(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// 测试无防护资产
+	result := GetActiveProtectionCount()
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+
+	data := result["data"].(map[string]interface{})
+	var count int
+	switch v := data["count"].(type) {
+	case int:
+		count = v
+	case float64:
+		count = int(v)
+	default:
+		t.Fatalf("Unexpected count type: %T", v)
+	}
+
+	if count != 0 {
+		t.Errorf("Expected count=0, got: %d", count)
+	}
+
+	// 添加启用的防护配置
+	SaveProtectionConfig(`{"asset_name": "openclaw", "enabled": true}`)
+	SaveProtectionConfig(`{"asset_name": "test", "enabled": true}`)
+
+	// 再次检查
+	result = GetActiveProtectionCount()
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+
+	data = result["data"].(map[string]interface{})
+	switch v := data["count"].(type) {
+	case int:
+		count = v
+	case float64:
+		count = int(v)
+	default:
+		t.Fatalf("Unexpected count type: %T", v)
+	}
+
+	if count != 2 {
+		t.Errorf("Expected count=2, got: %d", count)
+	}
+
+	// 禁用一个
+	SetProtectionEnabled(`{"asset_name": "test", "enabled": false}`)
+
+	// 检查数量是否减少
+	result = GetActiveProtectionCount()
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+
+	data = result["data"].(map[string]interface{})
+	switch v := data["count"].(type) {
+	case int:
+		count = v
+	case float64:
+		count = int(v)
+	default:
+		t.Fatalf("Unexpected count type: %T", v)
+	}
+
+	if count != 1 {
+		t.Errorf("Expected count=1, got: %d", count)
+	}
+}
+
+// TestSetProtectionEnabled 验证设置保护启用状态
+func TestSetProtectionEnabled(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	SaveProtectionConfig(`{"asset_name": "openclaw", "enabled": false}`)
+
+	result := SetProtectionEnabled(`{"asset_name": "openclaw", "enabled": true}`)
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestSetProtectionEnabled_InvalidJSON 验证JSON解析错误
+func TestSetProtectionEnabled_InvalidJSON(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	result := SetProtectionEnabled("bad")
+	if result["success"] != false {
+		t.Error("Expected success=false for invalid JSON")
+	}
+}
+
+// TestDeleteProtectionConfig 验证删除保护配置
+func TestDeleteProtectionConfig(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	SaveProtectionConfig(`{"asset_name": "openclaw", "enabled": true}`)
+	result := DeleteProtectionConfig("openclaw", "")
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestSaveProtectionStatistics 验证保存保护统计
+func TestSaveProtectionStatistics(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	input := `{
+		"asset_name": "openclaw",
+		"analysis_count": 10,
+		"warning_count": 2,
+		"blocked_count": 1,
+		"total_tokens": 5000,
+		"request_count": 50
+	}`
+
+	result := SaveProtectionStatistics(input)
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestGetProtectionStatistics 验证获取保护统计
+func TestGetProtectionStatistics(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	SaveProtectionStatistics(`{"asset_name": "openclaw", "analysis_count": 5}`)
+
+	result := GetProtectionStatistics("openclaw", "")
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestClearProtectionStatistics 验证清空保护统计
+func TestClearProtectionStatistics(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	SaveProtectionStatistics(`{"asset_name": "openclaw", "analysis_count": 5}`)
+	result := ClearProtectionStatistics("openclaw", "")
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestSaveShepherdSensitiveActions 验证保存Shepherd敏感操作
+func TestSaveShepherdSensitiveActions(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	input := `{
+		"asset_name": "openclaw",
+		"actions": ["file_write", "shell_exec", "network_connect"]
+	}`
+
+	result := SaveShepherdSensitiveActions(input)
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestGetShepherdSensitiveActions 验证获取Shepherd敏感操作
+func TestGetShepherdSensitiveActions(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	SaveShepherdSensitiveActions(`{"asset_name": "openclaw", "actions": ["file_write"]}`)
+
+	result := GetShepherdSensitiveActions("openclaw")
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestClearAllData 验证清空所有运行数据
+func TestClearAllData(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	SaveProtectionStatistics(`{"asset_name": "openclaw", "analysis_count": 5}`)
+	result := ClearAllData()
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestSaveHomeDirectoryPermission 验证保存Home目录授权
+func TestSaveHomeDirectoryPermission(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	input := `{"authorized": true, "authorized_path": "/Users/test"}`
+	result := SaveHomeDirectoryPermission(input)
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+}
+
+// TestSaveHomeDirectoryPermission_InvalidJSON 验证JSON解析错误
+func TestSaveHomeDirectoryPermission_InvalidJSON(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	result := SaveHomeDirectoryPermission("bad")
+	if result["success"] != false {
+		t.Error("Expected success=false for invalid JSON")
+	}
+}
+
+// TestSaveShepherdSensitiveActions_InvalidJSON 验证JSON解析错误
+func TestSaveShepherdSensitiveActions_InvalidJSON(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	result := SaveShepherdSensitiveActions("bad json")
+	if result["success"] != false {
+		t.Error("Expected success=false for invalid JSON")
+	}
+}
+
+// TestSaveProtectionState_InvalidJSON 验证JSON解析错误
+func TestSaveProtectionState_InvalidJSON(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	result := SaveProtectionState("not json")
+	if result["success"] != false {
+		t.Error("Expected success=false for invalid JSON")
+	}
+}
+
+// TestSaveProtectionConfig_InvalidJSON 验证JSON解析错误
+func TestSaveProtectionConfig_InvalidJSON(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	result := SaveProtectionConfig("not json")
+	if result["success"] != false {
+		t.Error("Expected success=false for invalid JSON")
+	}
+}
+
+// TestSaveProtectionStatistics_InvalidJSON 验证JSON解析错误
+func TestSaveProtectionStatistics_InvalidJSON(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	result := SaveProtectionStatistics("not json")
+	if result["success"] != false {
+		t.Error("Expected success=false for invalid JSON")
+	}
+}
+
+// TestProtectionConfig_RoundTrip 验证保护配置的完整存取
+func TestProtectionConfig_RoundTrip(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	input := `{
+		"asset_name": "openclaw",
+		"enabled": true,
+		"audit_only": true,
+		"sandbox_enabled": false,
+		"single_session_token_limit": 1000,
+		"daily_token_limit": 50000
+	}`
+
+	SaveProtectionConfig(input)
+
+	result := GetProtectionConfig("openclaw", "")
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+
+	// 序列化验证数据
+	dataJSON, _ := json.Marshal(result["data"])
+	var config map[string]interface{}
+	json.Unmarshal(dataJSON, &config)
+
+	if config["asset_name"] != "openclaw" {
+		t.Errorf("Expected asset_name=openclaw, got: %v", config["asset_name"])
+	}
+	if config["enabled"] != true {
+		t.Errorf("Expected enabled=true, got: %v", config["enabled"])
+	}
+	if config["audit_only"] != true {
+		t.Errorf("Expected audit_only=true, got: %v", config["audit_only"])
+	}
+}
+
+// TestSaveProtectionConfig_PreservesBotModelConfig 验证 SaveProtectionConfig 不会擦除已有的 BotModelConfig
+func TestSaveProtectionConfig_PreservesBotModelConfig(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// 1. 先通过 SaveBotModelConfig 保存 bot 模型配置
+	botInput := `{
+		"asset_name": "openclaw",
+		"provider": "openai",
+		"base_url": "https://api.openai.com/v1",
+		"api_key": "sk-test-key",
+		"model": "gpt-4"
+	}`
+	result := SaveBotModelConfig(botInput)
+	if result["success"] != true {
+		t.Fatalf("SaveBotModelConfig failed: %v", result)
+	}
+
+	// 2. 验证 bot 模型配置已保存
+	getResult := GetBotModelConfig("openclaw", "")
+	if getResult["success"] != true {
+		t.Fatalf("GetBotModelConfig failed: %v", getResult)
+	}
+	data := getResult["data"].(map[string]interface{})
+	if data["provider"] != "openai" {
+		t.Fatalf("Expected provider=openai, got: %v", data["provider"])
+	}
+
+	// 3. 通过 SaveProtectionConfig 保存其他配置（不含 bot_model_config）
+	// 模拟 Flutter ProtectionDatabaseService.saveProtectionConfig 的行为
+	protInput := `{
+		"asset_name": "openclaw",
+		"enabled": true,
+		"audit_only": false,
+		"sandbox_enabled": true,
+		"single_session_token_limit": 2000,
+		"daily_token_limit": 100000
+	}`
+	result = SaveProtectionConfig(protInput)
+	if result["success"] != true {
+		t.Fatalf("SaveProtectionConfig failed: %v", result)
+	}
+
+	// 4. 验证 bot 模型配置没有被擦除
+	getResult = GetBotModelConfig("openclaw", "")
+	if getResult["success"] != true {
+		t.Fatalf("GetBotModelConfig after SaveProtectionConfig failed: %v", getResult)
+	}
+	data2 := getResult["data"]
+	if data2 == nil {
+		t.Fatal("BotModelConfig was erased by SaveProtectionConfig - expected it to be preserved")
+	}
+	preserved := data2.(map[string]interface{})
+	if preserved["provider"] != "openai" {
+		t.Errorf("Expected provider=openai after SaveProtectionConfig, got: %v", preserved["provider"])
+	}
+	if preserved["base_url"] != "https://api.openai.com/v1" {
+		t.Errorf("Expected base_url preserved, got: %v", preserved["base_url"])
+	}
+	if preserved["api_key"] != "sk-test-key" {
+		t.Errorf("Expected api_key preserved, got: %v", preserved["api_key"])
+	}
+	if preserved["model"] != "gpt-4" {
+		t.Errorf("Expected model preserved, got: %v", preserved["model"])
+	}
+}
