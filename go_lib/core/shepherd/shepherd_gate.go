@@ -53,6 +53,8 @@ type ShepherdGate struct {
 	modelConfig *repository.SecurityModelConfig
 	chatModel   model.ChatModel
 	language    string
+	assetName   string
+	assetID     string
 
 	reactAnalyzer *ToolCallReActAnalyzer
 	reactSkillCfg ReActSkillRuntimeConfig
@@ -152,6 +154,21 @@ func (sg *ShepherdGate) SetLanguage(lang string) {
 	}
 }
 
+// SetAssetContext sets asset identity used for security event attribution.
+func (sg *ShepherdGate) SetAssetContext(assetName, assetID string) {
+	sg.mu.Lock()
+	sg.assetName = strings.TrimSpace(assetName)
+	sg.assetID = strings.TrimSpace(assetID)
+	reactAnalyzer := sg.reactAnalyzer
+	normalizedAssetName := sg.assetName
+	normalizedAssetID := sg.assetID
+	sg.mu.Unlock()
+
+	if reactAnalyzer != nil {
+		reactAnalyzer.SetAssetContext(normalizedAssetName, normalizedAssetID)
+	}
+}
+
 // UpdateModelConfig updates the model configuration and recreates the chat model.
 func (sg *ShepherdGate) UpdateModelConfig(config *repository.SecurityModelConfig) error {
 	ctx := context.Background()
@@ -164,12 +181,15 @@ func (sg *ShepherdGate) UpdateModelConfig(config *repository.SecurityModelConfig
 	lang := sg.language
 	oldAnalyzer := sg.reactAnalyzer
 	reactSkillCfg := sg.reactSkillCfg
+	assetName := sg.assetName
+	assetID := sg.assetID
 	sg.mu.RUnlock()
 
 	newAnalyzer, analyzerErr := NewToolCallReActAnalyzerWithConfig(ctx, chatModel, lang, config, &reactSkillCfg)
 	if analyzerErr != nil {
 		return fmt.Errorf("failed to recreate ReAct analyzer: %w", analyzerErr)
 	}
+	newAnalyzer.SetAssetContext(assetName, assetID)
 
 	sg.mu.Lock()
 	sg.modelConfig = config

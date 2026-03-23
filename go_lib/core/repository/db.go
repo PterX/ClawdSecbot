@@ -326,11 +326,16 @@ func createSecurityEventTables(db *sql.DB) error {
 			action_desc TEXT NOT NULL,
 			risk_type TEXT,
 			detail TEXT,
-			source TEXT NOT NULL
+			source TEXT NOT NULL,
+			asset_name TEXT NOT NULL DEFAULT '',
+			asset_id TEXT NOT NULL DEFAULT ''
 		)
 	`); err != nil {
 		return fmt.Errorf("failed to create security_events table: %w", err)
 	}
+
+	migrateAddColumn(db, "security_events", "asset_name", "TEXT NOT NULL DEFAULT ''")
+	migrateAddColumn(db, "security_events", "asset_id", "TEXT NOT NULL DEFAULT ''")
 
 	if _, err := db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_security_events_timestamp ON security_events(timestamp)
@@ -342,6 +347,12 @@ func createSecurityEventTables(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_security_events_event_type ON security_events(event_type)
 	`); err != nil {
 		return fmt.Errorf("failed to create security_events event_type index: %w", err)
+	}
+
+	if _, err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_security_events_asset ON security_events(asset_name, asset_id, timestamp)
+	`); err != nil {
+		return fmt.Errorf("failed to create security_events asset index: %w", err)
 	}
 
 	logging.Info("Security event tables created/verified successfully")

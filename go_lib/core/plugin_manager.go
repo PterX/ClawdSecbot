@@ -309,6 +309,28 @@ func (pm *PluginManager) getAllPluginsDeterministic() []BotPlugin {
 	return plugins
 }
 
+// getAssetInstanceCountsByPlugin returns discovered asset instance counts keyed by normalized asset name.
+func (pm *PluginManager) getAssetInstanceCountsByPlugin() map[string]int {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	counts := make(map[string]int)
+	for _, inst := range pm.instances {
+		if inst == nil {
+			continue
+		}
+		key := normalizeAssetName(inst.AssetName)
+		if key == "" && inst.plugin != nil {
+			key = normalizeAssetName(inst.plugin.GetAssetName())
+		}
+		if key == "" {
+			continue
+		}
+		counts[key]++
+	}
+	return counts
+}
+
 // StartProtection starts protection by asset instance.
 func (pm *PluginManager) StartProtection(assetName string, assetID string, config ProtectionConfig) error {
 	inst, err := pm.resolvePluginInstance(assetName, assetID)

@@ -1,4 +1,4 @@
-package openclaw
+package nullclaw
 
 import (
 	"bufio"
@@ -14,14 +14,14 @@ import (
 	"go_lib/core/sandbox"
 )
 
-// restartOpenclawGateway handles gateway restart on Windows.
+// restartNullclawGateway handles gateway restart on Windows.
 // When sandbox_hook.dll is available, the gateway runs under MinHook-based sandbox protection.
 // Falls back to direct process start/stop when sandbox is unavailable.
-func restartOpenclawGateway(req *GatewayRestartRequest) (map[string]interface{}, error) {
+func restartNullclawGateway(req *GatewayRestartRequest) (map[string]interface{}, error) {
 	gatewayRestartMu.Lock()
 	defer gatewayRestartMu.Unlock()
 
-	logging.Info("[GatewayManager] === restartOpenclawGateway (Windows) called, asset=%s, assetID=%s, sandbox=%v ===",
+	logging.Info("[GatewayManager] === restartNullclawGateway (Windows) called, asset=%s, assetID=%s, sandbox=%v ===",
 		req.AssetName, req.AssetID, req.SandboxEnabled)
 
 	var homeDir string
@@ -32,15 +32,15 @@ func restartOpenclawGateway(req *GatewayRestartRequest) (map[string]interface{},
 		homeDir, _ = os.UserHomeDir()
 	}
 
-	binaryPath := resolveOpenclawBinaryPath()
+	binaryPath := resolveNullclawBinaryPath()
 	if binaryPath == "" {
-		return nil, fmt.Errorf("openclaw binary not found")
+		return nil, fmt.Errorf("nullclaw binary not found")
 	}
 	logging.Info("[GatewayManager] Resolved binary=%s", binaryPath)
 
 	// Stop existing gateway
-	logging.Info("[GatewayManager] Step 1: Stopping gateway...")
-	_, _ = runOpenclawGatewayCommand(binaryPath, []string{"stop"}, homeDir)
+	logging.Info("[GatewayManager] Step 1: Stopping service...")
+	_, _ = runNullclawGatewayCommand(binaryPath, []string{"stop"}, homeDir)
 	time.Sleep(800 * time.Millisecond)
 
 	// Try sandbox-protected restart if requested and supported
@@ -58,8 +58,8 @@ func restartOpenclawGateway(req *GatewayRestartRequest) (map[string]interface{},
 	}
 
 	// Fallback: direct start without sandbox
-	logging.Info("[GatewayManager] Step 2: Starting gateway (direct mode)...")
-	_, err := runOpenclawGatewayCommand(binaryPath, []string{"start"}, homeDir)
+	logging.Info("[GatewayManager] Step 2: Starting service (direct mode)...")
+	_, err := runNullclawGatewayCommand(binaryPath, []string{"start"}, homeDir)
 	if err != nil {
 		logging.Warning("[GatewayManager] gateway start failed: %v", err)
 		return nil, fmt.Errorf("gateway start failed: %w", err)
@@ -153,7 +153,7 @@ func restartWithSandbox(req *GatewayRestartRequest, binaryPath, homeDir string) 
 // 2) Fallback to foreground gateway run through the provided binary path
 func resolveSandboxGatewayLaunch(binaryPath string) (string, []string) {
 	if binaryPath == "" {
-		return "openclaw", []string{"gateway", "run"}
+		return "nullclaw", []string{"gateway"}
 	}
 
 	ext := strings.ToLower(filepath.Ext(binaryPath))
@@ -163,7 +163,7 @@ func resolveSandboxGatewayLaunch(binaryPath string) (string, []string) {
 		}
 	}
 
-	return binaryPath, []string{"gateway", "run"}
+	return binaryPath, []string{"gateway"}
 }
 
 func parseGatewayWrapperCommand(cmdPath string) (string, []string, bool) {
@@ -231,11 +231,11 @@ func parseQuotedCommandLine(line string) (string, []string, bool) {
 	return parts[0], parts[1:], true
 }
 
-// restartOpenclawGatewaySimple performs a basic stop + start
-func restartOpenclawGatewaySimple() error {
-	binaryPath := resolveOpenclawBinaryPath()
+// restartNullclawGatewaySimple performs a basic stop + start
+func restartNullclawGatewaySimple() error {
+	binaryPath := resolveNullclawBinaryPath()
 	if binaryPath == "" {
-		return fmt.Errorf("openclaw binary not found")
+		return fmt.Errorf("nullclaw binary not found")
 	}
 
 	var homeDir string
@@ -246,21 +246,21 @@ func restartOpenclawGatewaySimple() error {
 		homeDir, _ = os.UserHomeDir()
 	}
 
-	logging.Info("[GatewayManager] restartOpenclawGatewaySimple (Windows): stop gateway")
-	_, _ = runOpenclawGatewayCommand(binaryPath, []string{"stop"}, homeDir)
+	logging.Info("[GatewayManager] restartNullclawGatewaySimple (Windows): stop service")
+	_, _ = runNullclawGatewayCommand(binaryPath, []string{"stop"}, homeDir)
 
-	logging.Info("[GatewayManager] restartOpenclawGatewaySimple (Windows): start gateway")
-	_, err := runOpenclawGatewayCommand(binaryPath, []string{"start"}, homeDir)
+	logging.Info("[GatewayManager] restartNullclawGatewaySimple (Windows): start service")
+	_, err := runNullclawGatewayCommand(binaryPath, []string{"start"}, homeDir)
 	return err
 }
 
-// runOpenclawGatewayCommand executes openclaw gateway command on Windows
-func runOpenclawGatewayCommand(binaryPath string, args []string, homeDir string) (string, error) {
+// runNullclawGatewayCommand executes nullclaw service command on Windows
+func runNullclawGatewayCommand(binaryPath string, args []string, homeDir string) (string, error) {
 	if binaryPath == "" {
 		return "", fmt.Errorf("binary path is empty")
 	}
 
-	cmdArgs := append([]string{"gateway"}, args...)
+	cmdArgs := append([]string{"service"}, args...)
 	cmd := exec.Command(binaryPath, cmdArgs...)
 	if homeDir != "" {
 		cmd.Env = append(os.Environ(), "USERPROFILE="+homeDir)

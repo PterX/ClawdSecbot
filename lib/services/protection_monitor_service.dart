@@ -115,6 +115,16 @@ class ProtectionMonitorService {
     _isProxyRunning = isRunning;
   }
 
+  bool _matchesCurrentAsset(SecurityEvent event) {
+    if (_assetID.isNotEmpty) {
+      return event.assetID == _assetID;
+    }
+    if ((_assetName ?? '').isNotEmpty) {
+      return event.assetName == _assetName;
+    }
+    return true;
+  }
+
   int _deltaWithReset(int current, int previous) {
     if (current >= previous) {
       return current - previous;
@@ -211,7 +221,8 @@ class ProtectionMonitorService {
               scheduleMicrotask(() {
                 try {
                   final event = SecurityEvent.fromJson(payload);
-                  if (!_securityEventController.isClosed) {
+                  if (_matchesCurrentAsset(event) &&
+                      !_securityEventController.isClosed) {
                     _securityEventController.add([event]);
                   }
                 } catch (e) {
@@ -303,14 +314,20 @@ class ProtectionMonitorService {
     }
 
     // 计算增量用于数据库存储（支持计数器重置/资产切换）
-    final deltaPromptTokens = _deltaWithReset(_totalPromptTokens, prevPromptTokens);
+    final deltaPromptTokens = _deltaWithReset(
+      _totalPromptTokens,
+      prevPromptTokens,
+    );
     final deltaCompletionTokens = _deltaWithReset(
       _totalCompletionTokens,
       prevCompletionTokens,
     );
     final deltaToolCalls = _deltaWithReset(_totalToolCalls, prevToolCalls);
     final deltaAuditTokens = _deltaWithReset(_auditTokens, prevAuditTokens);
-    final deltaAnalysisCount = _deltaWithReset(_analysisCount, prevAnalysisCount);
+    final deltaAnalysisCount = _deltaWithReset(
+      _analysisCount,
+      prevAnalysisCount,
+    );
     final deltaBlockedCount = _deltaWithReset(_blockedCount, prevBlockedCount);
     final deltaWarningCount = _deltaWithReset(_warningCount, prevWarningCount);
 
@@ -545,7 +562,10 @@ class ProtectionMonitorService {
         MetricsDatabaseService()
             .saveApiMetrics(metrics, assetName: _assetName)
             .catchError((Object e) {
-              appLogger.error('[ProtectionMonitor] Failed to save API metrics', e);
+              appLogger.error(
+                '[ProtectionMonitor] Failed to save API metrics',
+                e,
+              );
             }),
       );
       unawaited(_saveStatisticsToDatabase());
@@ -639,8 +659,14 @@ class ProtectionMonitorService {
         _analysisCount,
         prevAnalysisCount,
       );
-      final deltaBlockedCount = _deltaWithReset(_blockedCount, prevBlockedCount);
-      final deltaWarningCount = _deltaWithReset(_warningCount, prevWarningCount);
+      final deltaBlockedCount = _deltaWithReset(
+        _blockedCount,
+        prevBlockedCount,
+      );
+      final deltaWarningCount = _deltaWithReset(
+        _warningCount,
+        prevWarningCount,
+      );
 
       final hasTokenChanges =
           deltaPromptTokens > 0 ||
@@ -801,8 +827,9 @@ class ProtectionMonitorService {
           .map((e) => SecurityEvent.fromJson(e as Map<String, dynamic>))
           .toList();
       await SecurityEventDatabaseService().saveSecurityEventsBatch(events);
-      if (!_securityEventController.isClosed) {
-        _securityEventController.add(events);
+      final matchedEvents = events.where(_matchesCurrentAsset).toList();
+      if (matchedEvents.isNotEmpty && !_securityEventController.isClosed) {
+        _securityEventController.add(matchedEvents);
       }
       return events.length;
     } catch (e) {
@@ -819,6 +846,8 @@ class ProtectionMonitorService {
     return await SecurityEventDatabaseService().getSecurityEvents(
       limit: limit,
       offset: offset,
+      assetName: _assetName ?? '',
+      assetID: _assetID,
     );
   }
 
@@ -829,7 +858,10 @@ class ProtectionMonitorService {
 
   /// 清空所有安全事件
   Future<void> clearAllSecurityEvents() async {
-    await SecurityEventDatabaseService().clearAllSecurityEvents();
+    await SecurityEventDatabaseService().clearSecurityEvents(
+      assetName: _assetName ?? '',
+      assetID: _assetID,
+    );
   }
 
   void dispose() {

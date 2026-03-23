@@ -304,6 +304,7 @@ func NewProxyProtectionFromConfig(protectionConfig *ProtectionConfig, logChan ch
 	if err != nil {
 		return nil, fmt.Errorf("failed to create shepherd gate: %w", err)
 	}
+	shepherdGate.SetAssetContext(protectionConfig.AssetName, protectionConfig.AssetID)
 	logging.Info("[ProxyProtection] Security model: Provider=%s, Model=%s", securityModel.Provider, securityModel.Model)
 
 	// ==================== Runtime Config ====================

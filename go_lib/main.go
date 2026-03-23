@@ -51,6 +51,7 @@ import (
 	"go_lib/core/shepherd"
 
 	// Import all plugins to trigger init() registration
+	_ "go_lib/plugins/nullclaw"
 	_ "go_lib/plugins/openclaw"
 )
 
@@ -390,6 +391,11 @@ func GetSecurityEventCountFFI() *C.char {
 //export ClearAllSecurityEventsFFI
 func ClearAllSecurityEventsFFI() *C.char {
 	return jsonToCString(service.ClearAllSecurityEvents())
+}
+
+//export ClearSecurityEventsFFI
+func ClearSecurityEventsFFI(jsonC *C.char) *C.char {
+	return jsonToCString(service.ClearSecurityEvents(C.GoString(jsonC)))
 }
 
 //export GetPendingSecurityEvents
@@ -1041,14 +1047,29 @@ func SyncGatewaySandboxByAsset(assetIDC *C.char) *C.char {
 	return C.CString(core.SyncGatewaySandboxByAssetAndPlugin("", C.GoString(assetIDC)))
 }
 
+//export SyncGatewaySandboxByAssetName
+func SyncGatewaySandboxByAssetName(assetNameC, assetIDC *C.char) *C.char {
+	return C.CString(core.SyncGatewaySandboxByAssetAndPlugin(C.GoString(assetNameC), C.GoString(assetIDC)))
+}
+
 //export HasInitialBackupFFI
 func HasInitialBackupFFI() *C.char {
 	return C.CString(core.HasInitialBackupByPlugin(""))
 }
 
+//export HasInitialBackupByAssetFFI
+func HasInitialBackupByAssetFFI(assetNameC *C.char) *C.char {
+	return C.CString(core.HasInitialBackupByPlugin(C.GoString(assetNameC)))
+}
+
 //export RestoreToInitialConfigFFI
 func RestoreToInitialConfigFFI() *C.char {
 	return C.CString(core.RestoreToInitialConfigByPlugin(""))
+}
+
+//export RestoreToInitialConfigByAssetFFI
+func RestoreToInitialConfigByAssetFFI(assetNameC *C.char) *C.char {
+	return C.CString(core.RestoreToInitialConfigByPlugin(C.GoString(assetNameC)))
 }
 
 func main() {}

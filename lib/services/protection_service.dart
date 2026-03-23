@@ -215,7 +215,8 @@ class ProtectionService {
     int? proxyPort,
   }) async {
     bool effectiveAuditOnly = runtimeConfig.auditOnly;
-    int effectiveSingleSessionTokenLimit = runtimeConfig.singleSessionTokenLimit;
+    int effectiveSingleSessionTokenLimit =
+        runtimeConfig.singleSessionTokenLimit;
     int effectiveDailyTokenLimit = runtimeConfig.dailyTokenLimit;
     if (_assetName != null) {
       try {
@@ -235,9 +236,8 @@ class ProtectionService {
 
     int initialDailyTokenUsage = runtimeConfig.initialDailyTokenUsage;
     if (_assetName != null && effectiveDailyTokenLimit > 0) {
-      initialDailyTokenUsage = await MetricsDatabaseService().getDailyTokenUsage(
-        _assetName!,
-      );
+      initialDailyTokenUsage = await MetricsDatabaseService()
+          .getDailyTokenUsage(_assetName!);
     }
 
     final ProtectionRuntimeConfig finalRuntimeConfig = ProtectionRuntimeConfig(
@@ -647,6 +647,13 @@ class ProtectionService {
       }
 
       final resultStr = await Isolate.run(() {
+        if (_hasAssetBinding) {
+          return ProtectionProxyFFI.syncGatewaySandboxByAssetInIsolate(
+            libPath,
+            _assetName!,
+            _assetID,
+          );
+        }
         return ProtectionProxyFFI.syncGatewaySandboxInIsolate(libPath);
       });
 
@@ -968,15 +975,35 @@ class ProtectionService {
   Future<bool> hasInitialBackup() async {
     try {
       final dylib = _getDylib();
-      final hasBackupFunc = dylib
-          .lookupFunction<HasInitialBackupFFIC, HasInitialBackupFFIDart>(
-            'HasInitialBackupFFI',
-          );
+      late final ffi.Pointer<Utf8> Function() hasBackupFunc;
+      ffi.Pointer<Utf8>? assetNamePtr;
+      ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>)? hasBackupByAssetFunc;
+      if (_hasAssetBinding) {
+        hasBackupByAssetFunc = dylib
+            .lookupFunction<
+              HasInitialBackupByAssetFFIC,
+              HasInitialBackupByAssetFFIDart
+            >('HasInitialBackupByAssetFFI');
+      } else {
+        hasBackupFunc = dylib
+            .lookupFunction<HasInitialBackupFFIC, HasInitialBackupFFIDart>(
+              'HasInitialBackupFFI',
+            );
+      }
       final freeString = dylib.lookupFunction<FreeStringC, FreeStringDart>(
         'FreeString',
       );
 
-      final resultPtr = hasBackupFunc();
+      final ffi.Pointer<Utf8> resultPtr;
+      if (_hasAssetBinding) {
+        assetNamePtr = _assetName!.toNativeUtf8();
+        resultPtr = hasBackupByAssetFunc!(assetNamePtr);
+      } else {
+        resultPtr = hasBackupFunc();
+      }
+      if (assetNamePtr != null) {
+        malloc.free(assetNamePtr);
+      }
       final resultStr = resultPtr.toDartString();
       freeString(resultPtr);
 
@@ -1010,6 +1037,12 @@ class ProtectionService {
 
       // 通过 Isolate 执行恢复操作，避免阻塞 UI 线程
       final resultStr = await Isolate.run(() {
+        if (_hasAssetBinding) {
+          return ProtectionProxyFFI.restoreToInitialConfigByAssetInIsolate(
+            libPath,
+            _assetName!,
+          );
+        }
         return ProtectionProxyFFI.restoreToInitialConfigInIsolate(libPath);
       });
 
