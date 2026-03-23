@@ -1,7 +1,6 @@
 package nullclaw
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"go_lib/core"
@@ -43,67 +42,19 @@ func (s *NullclawAssetScanner) WithCollector(c core.Collector) *NullclawAssetSca
 //  4. 使用Nullclaw配置文件信息丰富资产属性
 //  5. 为每个实例计算唯一指纹 ID
 func (s *NullclawAssetScanner) ScanAssets() ([]core.Asset, error) {
-	logging.Info("Starting Nullclaw asset scan...")
-
-	// 1. 确定采集器
-	collector := s.collector
-	if collector == nil {
-		collector = core.NewCollector(s.configPath)
-	}
-
-	// 2. 创建扫描服务并加载规则
-	assetScanner := scanner.NewAssetScanner(collector)
-	rules, err := s.loadRules()
-	if err != nil {
-		logging.Error("Failed to load Nullclaw rules: %v", err)
-		return []core.Asset{}, nil
-	}
-	assetScanner.LoadRules(rules)
-
-	// 3. 执行扫描
-	rawAssets, err := assetScanner.Scan()
-	if err != nil {
-		logging.Error("Nullclaw asset scan failed: %v", err)
-		return []core.Asset{}, nil
-	}
-
-	if len(rawAssets) == 0 {
-		logging.Info("No Nullclaw assets detected")
-		return []core.Asset{}, nil
-	}
-
-	// 4. Merge rule-matched results into a single Nullclaw asset per config path.
-	// MergeAssetsByName consolidates ports/processes from multiple detection rules
-	// (e.g. port-based + config-file-based) that belong to the same logical instance.
-	mergedAsset := scanner.MergeAssetsByName(rawAssets, nullclawAssetName, "Service")
-	if mergedAsset == nil {
-		logging.Info("No Nullclaw assets after merge")
-		return []core.Asset{}, nil
-	}
-
-	// 5. Enrich with config, build display sections, compute ID
-	s.enrichAssetWithConfig(mergedAsset)
-
-	mergedAsset.SourcePlugin = nullclawAssetName
-	mergedAsset.ID = core.ComputeAssetID(
-		mergedAsset.Name,
-		mergedAsset.Metadata["config_path"],
-		mergedAsset.Ports,
-		mergedAsset.ProcessPaths,
-	)
-
-	logging.Info("Nullclaw asset scan completed, id=%s, ports=%v, processes=%v",
-		mergedAsset.ID, mergedAsset.Ports, mergedAsset.ProcessPaths)
-	return []core.Asset{*mergedAsset}, nil
+	return scanner.ScanSingleMergedAsset(scanner.PluginAssetScanOptions{
+		AssetName:  nullclawAssetName,
+		AssetType:  "Service",
+		ConfigPath: s.configPath,
+		Collector:  s.collector,
+		RulesJSON:  nullclawRulesJSON,
+		Enrich:     s.enrichAssetWithConfig,
+	})
 }
 
 // loadRules 从嵌入的JSON文件加载Nullclaw资产检测规则
 func (s *NullclawAssetScanner) loadRules() ([]core.AssetFinderRule, error) {
-	var rules []core.AssetFinderRule
-	if err := json.Unmarshal(nullclawRulesJSON, &rules); err != nil {
-		return nil, err
-	}
-	return rules, nil
+	return scanner.ParseAssetFinderRulesJSON(nullclawRulesJSON)
 }
 
 // enrichAssetWithConfig 使用Nullclaw配置文件信息丰富资产属性
