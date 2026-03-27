@@ -10,7 +10,12 @@ import 'security_model_config_form.dart';
 /// Tab 1: 通用设置（开机启动、清空数据、恢复配置、重新授权）
 class SettingsDialog extends StatefulWidget {
   final bool launchAtStartupEnabled;
-  final VoidCallback onToggleLaunchAtStartup;
+  final Future<void> Function({
+    required bool launchAtStartupEnabled,
+    required int scheduledScanIntervalSeconds,
+  })
+  onSaveGeneralSettings;
+  final int scheduledScanIntervalSeconds;
   final VoidCallback onClearData;
   final VoidCallback onRestoreConfig;
   final VoidCallback onShowAbout;
@@ -19,7 +24,8 @@ class SettingsDialog extends StatefulWidget {
   const SettingsDialog({
     super.key,
     required this.launchAtStartupEnabled,
-    required this.onToggleLaunchAtStartup,
+    required this.onSaveGeneralSettings,
+    required this.scheduledScanIntervalSeconds,
     required this.onClearData,
     required this.onRestoreConfig,
     required this.onShowAbout,
@@ -38,11 +44,13 @@ class _SettingsDialogState extends State<SettingsDialog>
   bool _saving = false;
   int _currentTabIndex = 0;
   late bool _localLaunchAtStartup;
+  late int _localScheduledScanIntervalSeconds;
 
   @override
   void initState() {
     super.initState();
     _localLaunchAtStartup = widget.launchAtStartupEnabled;
+    _localScheduledScanIntervalSeconds = widget.scheduledScanIntervalSeconds;
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) return;
@@ -64,8 +72,18 @@ class _SettingsDialogState extends State<SettingsDialog>
       _saving = true;
     });
 
-    final success = await _formKey.currentState?.saveConfig();
-    if (success == true) {
+    bool success = false;
+    if (_currentTabIndex == 0) {
+      success = await _formKey.currentState?.saveConfig() == true;
+    } else {
+      await widget.onSaveGeneralSettings(
+        launchAtStartupEnabled: _localLaunchAtStartup,
+        scheduledScanIntervalSeconds: _localScheduledScanIntervalSeconds,
+      );
+      success = true;
+    }
+
+    if (success) {
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop(true);
       }
@@ -85,11 +103,16 @@ class _SettingsDialogState extends State<SettingsDialog>
     }
   }
 
-  void _handleToggleLaunchAtStartup() {
+  void _handleLaunchAtStartupChanged(bool value) {
     setState(() {
-      _localLaunchAtStartup = !_localLaunchAtStartup;
+      _localLaunchAtStartup = value;
     });
-    widget.onToggleLaunchAtStartup();
+  }
+
+  void _handleScheduledScanIntervalChanged(int seconds) {
+    setState(() {
+      _localScheduledScanIntervalSeconds = seconds;
+    });
   }
 
   @override
@@ -122,7 +145,11 @@ class _SettingsDialogState extends State<SettingsDialog>
                   // Tab 1: 通用设置
                   GeneralSettingsTab(
                     launchAtStartupEnabled: _localLaunchAtStartup,
-                    onToggleLaunchAtStartup: _handleToggleLaunchAtStartup,
+                    onLaunchAtStartupChanged: _handleLaunchAtStartupChanged,
+                    scheduledScanIntervalSeconds:
+                        _localScheduledScanIntervalSeconds,
+                    onScheduledScanIntervalChanged:
+                        _handleScheduledScanIntervalChanged,
                     onClearData: widget.onClearData,
                     onRestoreConfig: widget.onRestoreConfig,
                     onShowAbout: widget.onShowAbout,
@@ -132,10 +159,8 @@ class _SettingsDialogState extends State<SettingsDialog>
               ),
             ),
             // Footer: 仅安全模型 Tab 显示保存/取消按钮
-            if (_currentTabIndex == 0) ...[
-              const SizedBox(height: 20),
-              _buildFooter(l10n),
-            ],
+            const SizedBox(height: 20),
+            _buildFooter(l10n),
           ],
         ),
       ),

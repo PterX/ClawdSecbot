@@ -3064,6 +3064,90 @@ abstract class AppLocalizations {
   /// **'通用设置'**
   String get generalSettings;
 
+  /// No description provided for @scheduledScanSetting.
+  ///
+  /// In zh, this message translates to:
+  /// **'定时扫描设置'**
+  String get scheduledScanSetting;
+
+  /// No description provided for @scheduledScanDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'按设定间隔自动执行安全扫描'**
+  String get scheduledScanDescription;
+
+  /// No description provided for @scheduledScanOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'关闭'**
+  String get scheduledScanOff;
+
+  /// No description provided for @scheduledScanCustom.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义'**
+  String get scheduledScanCustom;
+
+  /// No description provided for @scheduledScanCustomHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入正整数并选择时间单位'**
+  String get scheduledScanCustomHint;
+
+  /// No description provided for @scheduledScanCustomValueHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入数值'**
+  String get scheduledScanCustomValueHint;
+
+  /// No description provided for @scheduledScanInvalidCustomValue.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入大于 0 的数字'**
+  String get scheduledScanInvalidCustomValue;
+
+  /// No description provided for @scheduledScanOption60Seconds.
+  ///
+  /// In zh, this message translates to:
+  /// **'60秒'**
+  String get scheduledScanOption60Seconds;
+
+  /// No description provided for @scheduledScanOption5Minutes.
+  ///
+  /// In zh, this message translates to:
+  /// **'5分钟'**
+  String get scheduledScanOption5Minutes;
+
+  /// No description provided for @scheduledScanOption1Hour.
+  ///
+  /// In zh, this message translates to:
+  /// **'1小时'**
+  String get scheduledScanOption1Hour;
+
+  /// No description provided for @scheduledScanUnitSeconds.
+  ///
+  /// In zh, this message translates to:
+  /// **'秒'**
+  String get scheduledScanUnitSeconds;
+
+  /// No description provided for @scheduledScanUnitMinutes.
+  ///
+  /// In zh, this message translates to:
+  /// **'分钟'**
+  String get scheduledScanUnitMinutes;
+
+  /// No description provided for @scheduledScanUnitHours.
+  ///
+  /// In zh, this message translates to:
+  /// **'小时'**
+  String get scheduledScanUnitHours;
+
+  /// No description provided for @scheduledScanEvery.
+  ///
+  /// In zh, this message translates to:
+  /// **'每 {value} {unit}'**
+  String scheduledScanEvery(int value, String unit);
+
   /// No description provided for @dataManagement.
   ///
   /// In zh, this message translates to:

@@ -978,6 +978,26 @@
   "restoreConfigDescription": "恢复到首次启动前的状态",
   "restoringConfig": "正在恢复配置...",
   "generalSettings": "通用设置",
+  "scheduledScanSetting": "定时扫描设置",
+  "scheduledScanDescription": "按设定间隔自动执行安全扫描",
+  "scheduledScanOff": "关闭",
+  "scheduledScanCustom": "自定义",
+  "scheduledScanCustomHint": "请输入正整数并选择时间单位",
+  "scheduledScanCustomValueHint": "输入数值",
+  "scheduledScanInvalidCustomValue": "请输入大于 0 的数字",
+  "scheduledScanOption60Seconds": "60秒",
+  "scheduledScanOption5Minutes": "5分钟",
+  "scheduledScanOption1Hour": "1小时",
+  "scheduledScanUnitSeconds": "秒",
+  "scheduledScanUnitMinutes": "分钟",
+  "scheduledScanUnitHours": "小时",
+  "scheduledScanEvery": "每 {value} {unit}",
+  "@scheduledScanEvery": {
+    "placeholders": {
+      "value": {"type": "int"},
+      "unit": {"type": "String"}
+    }
+  },
   "dataManagement": "数据管理",
   "clearDataDescription": "清除日志、统计和分析数据",
   "permissionsSection": "权限",

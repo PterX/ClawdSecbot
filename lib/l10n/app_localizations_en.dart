@@ -1749,6 +1749,53 @@ class AppLocalizationsEn extends AppLocalizations {
   String get generalSettings => 'General';
 
   @override
+  String get scheduledScanSetting => 'Scheduled Scan';
+
+  @override
+  String get scheduledScanDescription =>
+      'Automatically run security scans at the selected interval';
+
+  @override
+  String get scheduledScanOff => 'Off';
+
+  @override
+  String get scheduledScanCustom => 'Custom';
+
+  @override
+  String get scheduledScanCustomHint =>
+      'Enter a positive interval and choose its unit';
+
+  @override
+  String get scheduledScanCustomValueHint => 'Enter value';
+
+  @override
+  String get scheduledScanInvalidCustomValue =>
+      'Please enter a number greater than 0';
+
+  @override
+  String get scheduledScanOption60Seconds => 'Every 60 seconds';
+
+  @override
+  String get scheduledScanOption5Minutes => 'Every 5 minutes';
+
+  @override
+  String get scheduledScanOption1Hour => 'Every 1 hour';
+
+  @override
+  String get scheduledScanUnitSeconds => 'seconds';
+
+  @override
+  String get scheduledScanUnitMinutes => 'minutes';
+
+  @override
+  String get scheduledScanUnitHours => 'hours';
+
+  @override
+  String scheduledScanEvery(int value, String unit) {
+    return 'Every $value $unit';
+  }
+
+  @override
   String get dataManagement => 'Data Management';
 
   @override
