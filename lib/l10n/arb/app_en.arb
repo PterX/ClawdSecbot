@@ -931,6 +931,26 @@
   "restoreConfigDescription": "Restore to state before first launch",
   "restoringConfig": "Restoring configuration...",
   "generalSettings": "General",
+  "scheduledScanSetting": "Scheduled Scan",
+  "scheduledScanDescription": "Automatically run security scans at the selected interval",
+  "scheduledScanOff": "Off",
+  "scheduledScanCustom": "Custom",
+  "scheduledScanCustomHint": "Enter a positive interval and choose its unit",
+  "scheduledScanCustomValueHint": "Enter value",
+  "scheduledScanInvalidCustomValue": "Please enter a number greater than 0",
+  "scheduledScanOption60Seconds": "Every 60 seconds",
+  "scheduledScanOption5Minutes": "Every 5 minutes",
+  "scheduledScanOption1Hour": "Every 1 hour",
+  "scheduledScanUnitSeconds": "seconds",
+  "scheduledScanUnitMinutes": "minutes",
+  "scheduledScanUnitHours": "hours",
+  "scheduledScanEvery": "Every {value} {unit}",
+  "@scheduledScanEvery": {
+    "placeholders": {
+      "value": {"type": "int"},
+      "unit": {"type": "String"}
+    }
+  },
   "dataManagement": "Data Management",
   "clearDataDescription": "Clear logs, statistics and analysis data",
   "permissionsSection": "Permissions",
