@@ -1,13 +1,17 @@
 import 'dart:ffi' as ffi;
 import 'dart:io';
+import 'dart:convert';
 import 'package:ffi/ffi.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as path;
 import '../utils/app_logger.dart';
 import 'database_service.dart';
 
 // FFI type definitions for core Go functions
-typedef _InitPathsFFIC = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
-typedef _InitPathsFFIDart = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _InitPathsFFIC =
+    ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _InitPathsFFIDart =
+    ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 
 typedef _InitLoggingFFIC = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
 typedef _InitLoggingFFIDart = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
@@ -96,7 +100,7 @@ class NativeLibraryService {
           _initGoLogging(dylib, freeStr);
 
           // 初始化Go数据库
-          _initGoDatabase(dylib, freeStr);
+          await _initGoDatabase(dylib, freeStr);
 
           _initialized = true;
           appLogger.info('[NativeLib] Native library initialized successfully');
@@ -159,7 +163,8 @@ class NativeLibraryService {
     final pluginDir = _getPluginDirectory();
     final workspaceDir = pluginDir.parent.path;
     // homeDir 使用用户主目录
-    final homeDir = Platform.environment['HOME'] ??
+    final homeDir =
+        Platform.environment['HOME'] ??
         Platform.environment['USERPROFILE'] ??
         '';
 
@@ -186,7 +191,9 @@ class NativeLibraryService {
 
     try {
       final initLoggingFFI = dylib
-          .lookupFunction<_InitLoggingFFIC, _InitLoggingFFIDart>('InitLoggingFFI');
+          .lookupFunction<_InitLoggingFFIC, _InitLoggingFFIDart>(
+            'InitLoggingFFI',
+          );
       final logDirPtr = logDir.toNativeUtf8();
       final resultPtr = initLoggingFFI(logDirPtr);
       final result = resultPtr.toDartString();
@@ -199,21 +206,37 @@ class NativeLibraryService {
   }
 
   /// 初始化Go数据库
-  void _initGoDatabase(ffi.DynamicLibrary dylib, FreeStringDart freeStr) {
+  Future<void> _initGoDatabase(
+    ffi.DynamicLibrary dylib,
+    FreeStringDart freeStr,
+  ) async {
     final dbPathStr = DatabaseService().dbPath;
+    final versionFilePathStr = DatabaseService().versionFilePath;
     if (dbPathStr == null) {
       appLogger.warning('[NativeLib] Cannot init Go DB: DB path unavailable');
       return;
     }
+    if (versionFilePathStr == null) {
+      appLogger.warning(
+        '[NativeLib] Cannot init Go DB: version file path unavailable',
+      );
+      return;
+    }
 
     try {
+      final packageInfo = await PackageInfo.fromPlatform();
       final initDatabase = dylib
           .lookupFunction<_InitDatabaseC, _InitDatabaseDart>('InitDatabase');
-      final dbPathPtr = dbPathStr.toNativeUtf8();
-      final resultPtr = initDatabase(dbPathPtr);
+      final requestJson = jsonEncode({
+        'db_path': dbPathStr,
+        'version_file_path': versionFilePathStr,
+        'current_version': packageInfo.version,
+      });
+      final requestPtr = requestJson.toNativeUtf8();
+      final resultPtr = initDatabase(requestPtr);
       final result = resultPtr.toDartString();
       freeStr(resultPtr);
-      malloc.free(dbPathPtr);
+      malloc.free(requestPtr);
       appLogger.info('[NativeLib] Go DB initialized: $result');
     } catch (e) {
       appLogger.debug('[NativeLib] InitDatabase not available: $e');
