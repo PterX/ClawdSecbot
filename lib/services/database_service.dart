@@ -10,6 +10,7 @@ import '../utils/app_logger.dart';
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   String? _dbPath;
+  String? _versionFilePath;
 
   factory DatabaseService() {
     return _instance;
@@ -20,14 +21,20 @@ class DatabaseService {
   /// 数据库文件路径
   String? get dbPath => _dbPath;
 
+  /// Version state file path for startup migrations
+  String? get versionFilePath => _versionFilePath;
+
   /// 初始化：计算数据库路径并确保目录存在
   Future<void> init() async {
     if (_dbPath != null) return;
 
     final dir = await getApplicationSupportDirectory();
     final dbPath = p.join(dir.path, 'bot_sec_manager.db');
+    final versionFilePath = p.join(dir.path, 'bot_sec_manager.version');
     _dbPath = dbPath;
+    _versionFilePath = versionFilePath;
     appLogger.info('[Database] Database path: $dbPath');
+    appLogger.info('[Database] Version file path: $versionFilePath');
 
     // 确保目录存在
     final dbFile = File(dbPath);
