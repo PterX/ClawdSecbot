@@ -10,6 +10,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <limits.h>
+#include <time.h>
+#include <sys/syscall.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
 #include <sys/types.h>
@@ -56,6 +58,8 @@ static __thread int g_in_interceptor = 0;
 static char g_policy_file_path[PATH_MAX] = {0};
 static char g_gateway_binary_path[PATH_MAX] = {0};
 static char g_gateway_config_path[PATH_MAX] = {0};
+static char g_sandbox_log_file_path[PATH_MAX] = {0};
+static int g_sandbox_log_fd = -1;
 
 // 本机网卡 IP 列表（网络白名单自动放行）
 #define MAX_LOCAL_IPS 64
@@ -67,6 +71,8 @@ static void normalize_policy_paths(char **paths, size_t count);
 static int is_path_blocked(const char *path);
 static void clean_path(char *buf, size_t buf_size, const char *path);
 static void collect_local_ips(void);
+static void format_timestamp(char *buf, size_t buf_size);
+static void write_sandbox_log_line(const char *line);
 
 // ---------------- 日志输出 ----------------
 
@@ -80,16 +86,44 @@ static void log_info(const char *fmt, ...) {
     vsnprintf(message, sizeof(message), fmt, ap);
     va_end(ap);
 
-    fprintf(stderr, "[ClawdSecbot] %s\n", message);
+    char timestamp[32] = {0};
+    char line[4608] = {0};
+    format_timestamp(timestamp, sizeof(timestamp));
+    snprintf(line, sizeof(line), "[%s] [ClawdSecbot] %s\n", timestamp, message);
+
+    fprintf(stderr, "%s", line);
     fflush(stderr);
+    write_sandbox_log_line(line);
+}
+
+static void format_timestamp(char *buf, size_t buf_size) {
+    if (!buf || buf_size == 0) return;
+
+    time_t now = time(NULL);
+    struct tm tm_now;
+    if (localtime_r(&now, &tm_now) == NULL) {
+        snprintf(buf, buf_size, "1970-01-01 00:00:00");
+        return;
+    }
+    strftime(buf, buf_size, "%Y-%m-%d %H:%M:%S", &tm_now);
+}
+
+static void write_sandbox_log_line(const char *line) {
+    if (!line || g_sandbox_log_fd < 0) return;
+
+    size_t len = strlen(line);
+    if (len == 0) return;
+
+    (void)syscall(SYS_write, g_sandbox_log_fd, line, len);
 }
 
 // 输出沙箱拦截事件日志(action=BLOCK/LOG_ONLY, type=FILE/NET/DNS/CMD)
-static void log_event(const char *action, const char *type, const char *target) {
-    log_info("ACTION=%s TYPE=%s TARGET=%s",
+static void log_event(const char *action, const char *type, const char *target, const char *detail) {
+    log_info("ACTION=%s TYPE=%s TARGET=%s DETAIL=%s",
              action ? action : "UNKNOWN",
              type ? type : "",
-             target ? target : "");
+             target ? target : "",
+             detail ? detail : "");
 }
 
 // ---------------- 工具函数 ----------------
@@ -533,7 +567,8 @@ static int enforce_path_policy(const char *type, const char *path) {
     if (!path) return 0;
     if (!is_path_blocked(path)) return 0;
 
-    log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", type ? type : "FILE", path);
+    log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", type ? type : "FILE", path,
+              "path policy denied");
     if (!g_policy.log_only) {
         errno = EACCES;
         return 1;
@@ -627,7 +662,7 @@ static unsigned int build_stdio_mode_op_mask(const char *mode, unsigned int fall
 // Skips stdin/stdout/stderr, sandbox log fd, and reentrant calls to prevent
 // infinite recursion (log_event -> fprintf -> write -> enforce_fd_policy -> ...).
 static int enforce_fd_policy(const char *type, int fd) {
-    if (fd <= STDERR_FILENO || g_in_interceptor) return 0;
+    if (fd <= STDERR_FILENO || g_in_interceptor || fd == g_sandbox_log_fd) return 0;
 
     g_in_interceptor = 1;
 
@@ -664,12 +699,13 @@ static int is_system_path(const char *path) {
 // 白名单模式下自动放行沙箱自身相关路径（策略文件、日志、网关二进制/配置所在目录）
 static int is_self_path(const char *path) {
     if (!path) return 0;
-    static const char *self_ptrs[] = {NULL, NULL, NULL};
+    static const char *self_ptrs[] = {NULL, NULL, NULL, NULL};
     self_ptrs[0] = g_policy_file_path;
     self_ptrs[1] = g_gateway_binary_path;
     self_ptrs[2] = g_gateway_config_path;
+    self_ptrs[3] = g_sandbox_log_file_path;
 
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 4; ++i) {
         if (!self_ptrs[i] || self_ptrs[i][0] == '\0') continue;
         if (match_path_with_boundary(path, self_ptrs[i])) return 1;
 
@@ -743,6 +779,21 @@ static int is_local_ip(const char *ip) {
     return 0;
 }
 
+static int is_auto_allowed_ip(const char *ip) {
+    if (!ip) return 0;
+    if (is_local_ip(ip)) return 1;
+
+    struct in_addr addr4;
+    if (inet_pton(AF_INET, ip, &addr4) == 1) {
+        unsigned long host = ntohl(addr4.s_addr);
+        unsigned int first_octet = (unsigned int)((host >> 24) & 0xFFU);
+        if (first_octet == 224U) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 // IP 通配符匹配: '*' 可匹配任意长度字符（用于 10.0.*.* 等模式）
 static int ip_pattern_matches(const char *ip, const char *pattern) {
     if (!ip || !pattern) return 0;
@@ -770,12 +821,14 @@ static int is_ip_blocked(const char *ip) {
 
     if (g_policy.network_policy_whitelist) {
         if (g_policy.allowed_ips_count == 0 && g_policy.allowed_domains_count == 0) return 0;
-        if (is_local_ip(ip)) return 0;
+        if (is_auto_allowed_ip(ip)) return 0;
         for (size_t i = 0; i < g_policy.allowed_ips_count; ++i) {
             if (ip_pattern_matches(ip, g_policy.allowed_ips[i])) return 0;
         }
         return 1;
     }
+
+    if (is_auto_allowed_ip(ip)) return 0;
 
     for (size_t i = 0; i < g_policy.blocked_ips_count; ++i) {
         if (ip_pattern_matches(ip, g_policy.blocked_ips[i])) return 1;
@@ -877,6 +930,18 @@ static int is_cmd_blocked(const char *cmd) {
 __attribute__((constructor))
 static void sandbox_init(void) {
     const char *policy_path = getenv("SANDBOX_POLICY_FILE");
+    const char *log_path = getenv("SANDBOX_LOG_FILE");
+
+    if (log_path && log_path[0] != '\0') {
+        snprintf(g_sandbox_log_file_path, sizeof(g_sandbox_log_file_path), "%s", log_path);
+        g_sandbox_log_fd = (int)syscall(
+            SYS_openat,
+            AT_FDCWD,
+            g_sandbox_log_file_path,
+            O_WRONLY | O_CREAT | O_APPEND,
+            0600
+        );
+    }
 
     if (policy_path && policy_path[0] != '\0') {
         snprintf(g_policy_file_path, sizeof(g_policy_file_path), "%s", policy_path);
@@ -907,6 +972,10 @@ static void sandbox_init(void) {
 // 库卸载时自动执行: 释放策略结构体内存
 __attribute__((destructor))
 static void sandbox_fini(void) {
+    if (g_sandbox_log_fd >= 0) {
+        (void)syscall(SYS_close, g_sandbox_log_fd);
+        g_sandbox_log_fd = -1;
+    }
     free_string_array(g_policy.blocked_paths, g_policy.blocked_paths_count);
     free_string_array(g_policy.allowed_paths, g_policy.allowed_paths_count);
     free_string_array(g_policy.blocked_ips, g_policy.blocked_ips_count);
@@ -1614,7 +1683,8 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 
     char ip[INET6_ADDRSTRLEN] = {0};
     if (check_sockaddr_blocked(addr, addrlen, ip, sizeof(ip))) {
-        log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "NET", ip);
+        log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "NET", ip,
+                  "connect blocked by network policy");
         if (!g_policy.log_only) {
             errno = ECONNREFUSED;
             return -1;
@@ -1636,7 +1706,8 @@ ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
     if (dest_addr) {
         char ip[INET6_ADDRSTRLEN] = {0};
         if (check_sockaddr_blocked(dest_addr, addrlen, ip, sizeof(ip))) {
-            log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "NET-SENDTO", ip);
+            log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "NET-SENDTO", ip,
+                      "sendto blocked by network policy");
             if (!g_policy.log_only) {
                 errno = ECONNREFUSED;
                 return -1;
@@ -1658,7 +1729,8 @@ ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags) {
         char ip[INET6_ADDRSTRLEN] = {0};
         if (check_sockaddr_blocked((const struct sockaddr *)msg->msg_name,
                                    msg->msg_namelen, ip, sizeof(ip))) {
-            log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "NET-SENDMSG", ip);
+            log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "NET-SENDMSG", ip,
+                      "sendmsg blocked by network policy");
             if (!g_policy.log_only) {
                 errno = ECONNREFUSED;
                 return -1;
@@ -1679,7 +1751,8 @@ int getaddrinfo(const char *node, const char *service,
     }
 
     if (node && g_policy_loaded && is_domain_blocked(node)) {
-        log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "DNS", node);
+        log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "DNS", node,
+                  "domain blocked by network policy");
         if (!g_policy.log_only) {
             return EAI_FAIL;
         }
@@ -1695,7 +1768,8 @@ int system(const char *command) {
     }
 
     if (command && is_cmd_blocked(command)) {
-        log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "CMD", command);
+        log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "CMD", command,
+                  "system command blocked by command policy");
         if (!g_policy.log_only) {
             errno = EPERM;
             return -1;
@@ -1717,7 +1791,8 @@ int execve(const char *filename, char *const argv[], char *const envp[]) {
     }
 
     if (cmd && is_cmd_blocked(cmd)) {
-        log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "CMD", cmd);
+        log_event(g_policy.log_only ? "LOG_ONLY" : "BLOCK", "CMD", cmd,
+                  "execve blocked by command policy");
         if (!g_policy.log_only) {
             errno = EPERM;
             return -1;
