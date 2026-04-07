@@ -50,8 +50,7 @@ class BotScanner {
 
     final baseRisks = List<RiskInfo>.from(pluginResult.riskInfo);
     _checkSystemRisks(baseRisks);
-
-    final skillRisks = await _loadRiskySkills();
+    final skillRisks = await _loadRiskySkills(pluginResult.risks);
 
     return ScanResult(
       config: pluginResult.config,
@@ -79,7 +78,7 @@ class BotScanner {
     _log('Found ${baseRisks.length} potential issues.');
 
     _checkSystemRisks(baseRisks);
-    final skillRisks = await _loadRiskySkills();
+    final skillRisks = await _loadRiskySkills(pluginResult.risks);
 
     return ScanResult(
       config: pluginResult.config ?? config,
@@ -123,14 +122,32 @@ class BotScanner {
     }
   }
 
-  Future<List<RiskInfo>> _loadRiskySkills() async {
+  Future<List<RiskInfo>> _loadRiskySkills(List<RiskInfo> pluginRisks) async {
     final risks = <RiskInfo>[];
-
     try {
+      final unscannedSkillNames = <String>{};
+      for (final risk in pluginRisks.where(
+        (r) => r.id == 'skills_not_scanned',
+      )) {
+        final names = risk.args?['skill_names'];
+        if (names is List) {
+          for (final name in names) {
+            final normalized = name?.toString().trim();
+            if (normalized != null && normalized.isNotEmpty) {
+              unscannedSkillNames.add(normalized.toLowerCase());
+            }
+          }
+        }
+      }
+
       final riskySkills = await ScanDatabaseService().getRiskySkills();
       final mergedRiskySkills = _mergeRiskySkillsByPath(riskySkills);
       for (final skill in mergedRiskySkills) {
         final skillName = skill['skill_name'] as String;
+        if (unscannedSkillNames.contains(skillName.trim().toLowerCase())) {
+          _log('Skip risky skill card for unscanned skill: $skillName');
+          continue;
+        }
         final issues = skill['issues'] as List<String>;
         final persistedIssueCount =
             (skill['issue_count'] as num?)?.toInt() ?? 0;

@@ -31,10 +31,7 @@ class SkillDeleteResult {
   final bool success;
   final bool alreadyMissing;
 
-  const SkillDeleteResult({
-    required this.success,
-    this.alreadyMissing = false,
-  });
+  const SkillDeleteResult({required this.success, this.alreadyMissing = false});
 }
 
 class SkillSecurityAnalyzerService {
@@ -45,6 +42,7 @@ class SkillSecurityAnalyzerService {
 
   Timer? _pollTimer;
   String? _currentBatchID;
+  String? _currentAssetName;
 
   Stream<String> get logStream => _logController.stream;
   Stream<BatchScanProgress> get progressStream => _progressController.stream;
@@ -97,7 +95,9 @@ class SkillSecurityAnalyzerService {
     }
   }
 
-  Future<Map<String, dynamic>> testConnection(SecurityModelConfig config) async {
+  Future<Map<String, dynamic>> testConnection(
+    SecurityModelConfig config,
+  ) async {
     final request = {
       'provider': config.provider,
       'endpoint': config.endpoint,
@@ -108,12 +108,17 @@ class SkillSecurityAnalyzerService {
     return _callOneArgAsync('TestModelConnectionFFI', jsonEncode(request));
   }
 
-  Future<Map<String, dynamic>> startBatchScan() async {
+  Future<Map<String, dynamic>> startBatchScan([String? assetName]) async {
     if (_currentBatchID != null) {
       throw Exception('A batch scan is already in progress');
     }
 
-    final result = _callNoArg('StartBatchSkillScan');
+    final result = assetName != null && assetName.trim().isNotEmpty
+        ? _callOneArg('StartBatchSkillScanByAssetFFI', assetName.trim())
+        : _callNoArg('StartBatchSkillScan');
+    _currentAssetName = assetName != null && assetName.trim().isNotEmpty
+        ? assetName.trim()
+        : null;
     if (result['success'] != true) {
       return result;
     }
@@ -131,14 +136,16 @@ class SkillSecurityAnalyzerService {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (_currentBatchID != null) {
-        _pollBatchLogs(_currentBatchID!);
+        _pollBatchLogs(_currentBatchID!, _currentAssetName);
       }
     });
   }
 
-  void _pollBatchLogs(String batchID) {
+  void _pollBatchLogs(String batchID, String? assetName) {
     try {
-      final result = _callOneArg('GetBatchSkillScanLog', batchID);
+      final result = assetName != null && assetName.trim().isNotEmpty
+          ? _callTwoArgs('GetBatchSkillScanLogByAssetFFI', assetName, batchID)
+          : _callOneArg('GetBatchSkillScanLog', batchID);
 
       final logs = result['logs'] as List?;
       if (logs != null) {
@@ -160,7 +167,8 @@ class SkillSecurityAnalyzerService {
       if (result['completed'] == true) {
         _pollTimer?.cancel();
         _currentBatchID = null;
-        if ((result['error'] as String?)?.isNotEmpty == true) {
+        _currentAssetName = null;
+        if (result['error'] != null && result['error'].toString().isNotEmpty) {
           _logController.add('Error: ${result['error']}');
         }
       }
@@ -169,19 +177,38 @@ class SkillSecurityAnalyzerService {
     }
   }
 
-  Future<Map<String, dynamic>> getBatchScanResults(String batchID) async {
+  Future<Map<String, dynamic>> getBatchScanResults(
+    String batchID, [
+    String? assetName,
+  ]) async {
+    if (assetName != null && assetName.trim().isNotEmpty) {
+      return _callTwoArgs(
+        'GetBatchSkillScanResultsByAssetFFI',
+        assetName.trim(),
+        batchID,
+      );
+    }
     return _callOneArg('GetBatchSkillScanResults', batchID);
   }
 
   Future<void> cancelBatchScan() async {
     if (_currentBatchID == null) return;
     try {
-      _callOneArg('CancelBatchSkillScan', _currentBatchID!);
+      if (_currentAssetName != null && _currentAssetName!.trim().isNotEmpty) {
+        _callTwoArgs(
+          'CancelBatchSkillScanByAssetFFI',
+          _currentAssetName!,
+          _currentBatchID!,
+        );
+      } else {
+        _callOneArg('CancelBatchSkillScan', _currentBatchID!);
+      }
     } catch (e) {
       appLogger.error('[SkillSecurityAnalyzer] Cancel batch scan error', e);
     } finally {
       _pollTimer?.cancel();
       _currentBatchID = null;
+      _currentAssetName = null;
     }
   }
 
@@ -241,6 +268,19 @@ class SkillSecurityAnalyzerService {
     }
     try {
       return transport.callOneArg(method, arg);
+    } catch (e) {
+      appLogger.error('[SkillSecurityAnalyzer] $method failed', e);
+      return {'success': false, 'error': '$method failed: $e'};
+    }
+  }
+
+  Map<String, dynamic> _callTwoArgs(String method, String arg1, String arg2) {
+    final transport = TransportRegistry.transport;
+    if (!transport.isReady) {
+      return {'success': false, 'error': 'Transport not initialized'};
+    }
+    try {
+      return transport.callTwoArgs(method, arg1, arg2);
     } catch (e) {
       appLogger.error('[SkillSecurityAnalyzer] $method failed', e);
       return {'success': false, 'error': '$method failed: $e'};

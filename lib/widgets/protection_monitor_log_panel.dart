@@ -146,6 +146,9 @@ class _ProtectionMonitorLogPanelState extends State<ProtectionMonitorLogPanel> {
     if (lowerAsset.contains('dintalclaw')) {
       return _preprocessDinTalClaw(content, role);
     }
+    if (lowerAsset.contains('qclaw')) {
+      return _preprocessQClaw(content, role);
+    }
 
     // 其他资产类型在此扩展，例如：
     // if (lowerAsset.contains('other_asset')) {
@@ -153,6 +156,37 @@ class _ProtectionMonitorLogPanelState extends State<ProtectionMonitorLogPanel> {
     // }
 
     return content;
+  }
+
+  // ---- QClaw 消息预处理 ----
+
+  String _preprocessQClaw(String content, String role) {
+    if (role.toLowerCase() != 'user') {
+      return content;
+    }
+    return _extractQClawUserBody(content) ?? content;
+  }
+
+  String? _extractQClawUserBody(String content) {
+    const senderPrefix = 'Sender (untrusted metadata):';
+    final trimmed = content.trimLeft();
+    final senderIndex = trimmed.indexOf(senderPrefix);
+    if (senderIndex < 0) {
+      return null;
+    }
+
+    final senderBlock = trimmed.substring(senderIndex);
+    final fenceStart = senderBlock.indexOf('```');
+    if (fenceStart < 0) {
+      return null;
+    }
+    final fenceEnd = senderBlock.indexOf('```', fenceStart + 3);
+    if (fenceEnd < 0) {
+      return null;
+    }
+
+    final body = senderBlock.substring(fenceEnd + 3).trimLeft();
+    return body.isNotEmpty ? body : null;
   }
 
   // ---- DinTalClaw 消息预处理 ----
@@ -1010,9 +1044,8 @@ class _ProtectionMonitorLogPanelState extends State<ProtectionMonitorLogPanel> {
     var displayMessages = group.messages.where((m) {
       final role = m.role.toLowerCase();
       if (role == 'system') return false;
-      if (role == 'tool' || role == 'tool_request' || role == 'tool_result') {
-        return false;
-      }
+      if (role == 'tool_request' || role == 'tool_result') return false;
+      if (role == 'tool' && m.content.trim().isEmpty) return false;
       if (role == 'assistant' && m.content.trim().isEmpty) return false;
       return true;
     }).toList();
@@ -1033,6 +1066,7 @@ class _ProtectionMonitorLogPanelState extends State<ProtectionMonitorLogPanel> {
         .toList();
 
     final assetName = group.assetName;
+    final lowerAssetName = assetName.toLowerCase();
 
     final summaryItems =
         <
@@ -1085,6 +1119,13 @@ class _ProtectionMonitorLogPanelState extends State<ProtectionMonitorLogPanel> {
             fields: fields,
           ));
         }
+      } else if (role == 'tool') {
+        final cleaned = _sanitizeCardContent(rawContent).trim();
+        summaryItems.add((
+          role: 'tool_result',
+          content: cleaned,
+          fields: const [],
+        ));
       } else {
         final cleaned = _sanitizeCardContent(rawContent).trim();
         summaryItems.add((
@@ -1114,6 +1155,37 @@ class _ProtectionMonitorLogPanelState extends State<ProtectionMonitorLogPanel> {
       ));
     }
 
+    // 有工具调用时在摘要中插入 tool_request 条目（排除内嵌协议的合成条目，它们仅在工具区展示）
+    if (responseToolCalls.isNotEmpty) {
+      final standardToolCalls = responseToolCalls
+          .where((tc) => !tc.id.startsWith('inline_'))
+          .toList();
+      if (standardToolCalls.isNotEmpty) {
+        final toolEntries = standardToolCalls.map((tc) {
+          final argsSummary = tc.arguments.isNotEmpty
+              ? _sanitizeCardContent(tc.arguments)
+              : '';
+          final display = argsSummary.isNotEmpty
+              ? '${tc.name}: $argsSummary'
+              : tc.name;
+          return (
+            role: 'tool_request',
+            content: display,
+            fields: const <({String field, String value})>[],
+          );
+        }).toList();
+        summaryItems.addAll(toolEntries);
+      }
+    }
+
+    // 资产特有过滤：对已在专用工具区域展示参数/结果的资产，
+    // 摘要区不再重复展示 tool_request / tool_result。
+    if (lowerAssetName.contains('dintalclaw') ||
+        lowerAssetName.contains('qclaw')) {
+      summaryItems.removeWhere(
+        (item) => item.role == 'tool_request' || item.role == 'tool_result',
+      );
+    }
     final toolArgs = responseToolCalls
         .where((tc) => tc.arguments.isNotEmpty)
         .map((tc) => '${tc.name}: ${_sanitizeCardContent(tc.arguments)}')

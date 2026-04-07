@@ -837,6 +837,9 @@ class _AssetCardState extends State<_AssetCard> {
 
   /// 根据资产状态生成折叠态右上角类型徽章文案
   String _buildAssetTypeBadgeText(Asset asset, bool isZh) {
+    if (asset.type == 'Service') {
+      return isZh ? '服务' : 'Service';
+    }
     if (asset.name != 'dintalclaw') {
       return asset.type;
     }
@@ -969,6 +972,26 @@ class _AssetCardState extends State<_AssetCard> {
   /// 将插件返回的英文标题/标签翻译为中文
   String _localizeText(String text, bool isZh) {
     if (!isZh) return text;
+    switch (text) {
+      case 'Gateway':
+        return '网关';
+      case 'Runtime':
+        return '运行时';
+      case 'Logs':
+        return '日志';
+      case 'User Skills':
+        return '用户技能';
+      case 'Built-in Skills':
+        return '内置技能';
+      case 'State':
+        return '状态文件';
+      case 'Auth Gateway':
+        return '认证网关';
+      case 'Node Binary':
+        return '主程序';
+      case 'Main':
+        return '主进程';
+    }
     const zhMap = {
       // Section titles
       'Gateway Configuration': '网关配置',
