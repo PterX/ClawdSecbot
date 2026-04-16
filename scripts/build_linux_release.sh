@@ -25,7 +25,7 @@ WEB_ROOTFS_DIR="$WORK_DIR/rootfs_web"
 WEB_BUILD_DIR="$WORK_DIR/web_build"
 SOURCE_ICON="$PROJECT_ROOT/scripts/icon_1024.png"
 TRAY_ICON="$PROJECT_ROOT/images/tray_icon.png"
-WEB_BINARY_ARTIFACT=""
+WEB_TAR_ARTIFACT=""
 
 BUILD_DEB=false
 BUILD_RPM=false
@@ -45,7 +45,7 @@ show_help() {
 Usage: ./scripts/build_linux_release.sh [OPTIONS]
 
 Build Linux release artifacts for ClawdSecbot.
-Default behavior builds desktop+web DEB/RPM in one run.
+Default behavior builds desktop+web DEB/RPM plus web tar.gz installer package in one run.
 
 Options:
   -v,  --version <X.Y.Z>     Semantic version (default: 1.0.0)
@@ -151,18 +151,6 @@ build_artifact_name() {
         "$(artifact_type_segment)" \
         "$(artifact_brand_segment)" \
         "$extension"
-}
-
-build_binary_artifact_name() {
-    local target="$1"
-    printf '%s-%s-%s-%s-%s-%s%s' \
-        "$APP_DISPLAY_NAME" \
-        "$target" \
-        "$VERSION" \
-        "$BUILD_NUMBER" \
-        "$BUILD_ARCH" \
-        "$(artifact_type_segment)" \
-        "$(artifact_brand_segment)"
 }
 
 # 校验依赖命令是否可用。
@@ -328,16 +316,77 @@ build_release_bundle() {
     ok "Desktop + Web release bundles built"
 }
 
-build_web_binary_artifact() {
+build_web_tarball_artifact() {
     local src_binary="$WEB_BUILD_DIR/bin/$WEB_EXECUTABLE_NAME"
-    local output_file="$PROJECT_ROOT/build/$(build_binary_artifact_name "$WEB_TARGET")"
+    local src_web_dir="$PROJECT_ROOT/build/web"
+    local src_preload_so="$PROJECT_ROOT/go_lib/core/sandbox/linux_hook/build/libsandbox_preload.so"
+    local staging_root="$WORK_DIR/web_tar"
+    local package_base
+    local package_dir
+    local output_file
+
+    package_base="$(build_artifact_name "$WEB_TARGET" "tar.gz")"
+    package_base="${package_base%.tar.gz}"
+    package_dir="$staging_root/$package_base"
+    output_file="$PROJECT_ROOT/build/${package_base}.tar.gz"
+
     [[ -f "$src_binary" ]] || fail "Web executable not found: $src_binary"
+    [[ -d "$src_web_dir" ]] || fail "Flutter web bundle not found: $src_web_dir"
+    [[ -f "$src_preload_so" ]] || fail "libsandbox_preload.so not found: $src_preload_so"
+
+    rm -rf "$staging_root"
+    mkdir -p "$package_dir/bin" "$package_dir/web" "$package_dir/lib"
+    cp "$src_binary" "$package_dir/bin/$WEB_EXECUTABLE_NAME"
+    chmod +x "$package_dir/bin/$WEB_EXECUTABLE_NAME"
+    cp -a "$src_web_dir"/. "$package_dir/web/"
+    cp "$src_preload_so" "$package_dir/lib/libsandbox_preload.so"
+
+    cat > "$package_dir/install.sh" << EOF
+#!/bin/bash
+set -euo pipefail
+
+if [[ "\${EUID}" -ne 0 ]]; then
+  echo "Please run as root: sudo ./install.sh"
+  exit 1
+fi
+
+BASE_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_LIB_DIR="/usr/lib/$WEB_PACKAGE_NAME"
+INSTALL_BIN_LINK="/usr/bin/$WEB_LAUNCHER_NAME"
+PRELOAD_TARGET="/usr/lib/$PACKAGE_NAME/libsandbox_preload.so"
+PRELOAD_DIR="/usr/lib/$PACKAGE_NAME"
+
+mkdir -p "\$INSTALL_LIB_DIR" "\$PRELOAD_DIR"
+rm -rf "\$INSTALL_LIB_DIR"/web
+mkdir -p "\$INSTALL_LIB_DIR"/web
+
+install -m 0755 "\$BASE_DIR/bin/$WEB_EXECUTABLE_NAME" "\$INSTALL_LIB_DIR/$WEB_EXECUTABLE_NAME"
+cp -a "\$BASE_DIR/web/." "\$INSTALL_LIB_DIR/web/"
+install -m 0755 "\$BASE_DIR/lib/libsandbox_preload.so" "\$PRELOAD_TARGET"
+
+cat > "\$INSTALL_BIN_LINK" << 'LAUNCHER'
+#!/bin/bash
+if [[ -z "\${BOTSEC_WEB_STATIC_DIR:-}" ]]; then
+  export BOTSEC_WEB_STATIC_DIR="/usr/lib/$WEB_PACKAGE_NAME/web"
+fi
+exec /usr/lib/$WEB_PACKAGE_NAME/$WEB_EXECUTABLE_NAME "\$@"
+LAUNCHER
+chmod +x "\$INSTALL_BIN_LINK"
+
+echo "Installed:"
+echo "  - /usr/lib/$WEB_PACKAGE_NAME/$WEB_EXECUTABLE_NAME"
+echo "  - /usr/lib/$WEB_PACKAGE_NAME/web"
+echo "  - /usr/lib/$PACKAGE_NAME/libsandbox_preload.so"
+echo "  - /usr/bin/$WEB_LAUNCHER_NAME"
+echo ""
+echo "Run with: $WEB_LAUNCHER_NAME --addr 0.0.0.0:18080"
+EOF
+    chmod +x "$package_dir/install.sh"
 
     rm -f "$output_file"
-    cp "$src_binary" "$output_file"
-    chmod +x "$output_file"
-    WEB_BINARY_ARTIFACT="$output_file"
-    ok "Web executable created: $output_file"
+    tar -czf "$output_file" -C "$staging_root" "$package_base"
+    WEB_TAR_ARTIFACT="$output_file"
+    ok "Web tarball created: $output_file"
 }
 
 # 初始化 rootfs 目录结构。
@@ -433,7 +482,6 @@ prepare_web_rootfs_layout() {
 copy_web_application_files() {
     local web_bundle_dir="$PROJECT_ROOT/build/web"
     local web_binary="$WEB_BUILD_DIR/bin/$WEB_EXECUTABLE_NAME"
-    local plugins_dir="$PROJECT_ROOT/plugins"
     local preload_so="$PROJECT_ROOT/go_lib/core/sandbox/linux_hook/build/libsandbox_preload.so"
 
     [[ -d "$web_bundle_dir" ]] || fail "Flutter web bundle not found: $web_bundle_dir"
@@ -442,11 +490,6 @@ copy_web_application_files() {
     cp "$web_binary" "$WEB_ROOTFS_DIR/usr/lib/$WEB_PACKAGE_NAME/$WEB_EXECUTABLE_NAME"
     chmod +x "$WEB_ROOTFS_DIR/usr/lib/$WEB_PACKAGE_NAME/$WEB_EXECUTABLE_NAME"
     cp -a "$web_bundle_dir"/. "$WEB_ROOTFS_DIR/usr/lib/$WEB_PACKAGE_NAME/web/"
-
-    if [[ -d "$plugins_dir" ]]; then
-        mkdir -p "$WEB_ROOTFS_DIR/usr/lib/$WEB_PACKAGE_NAME/plugins"
-        cp -a "$plugins_dir"/. "$WEB_ROOTFS_DIR/usr/lib/$WEB_PACKAGE_NAME/plugins/"
-    fi
 
     if [[ -f "$preload_so" ]]; then
         cp "$preload_so" "$WEB_ROOTFS_DIR/usr/lib/libsandbox_preload.so"
@@ -738,8 +781,8 @@ print_summary() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     ok "Linux release build completed"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    if [[ -n "$WEB_BINARY_ARTIFACT" ]]; then
-        echo "WEB BIN: $WEB_BINARY_ARTIFACT"
+    if [[ -n "$WEB_TAR_ARTIFACT" ]]; then
+        echo "Web TAR: $WEB_TAR_ARTIFACT"
     fi
     if [[ "$BUILD_DEB" == true ]]; then
         echo "Desktop DEB: $PROJECT_ROOT/build/$(build_artifact_name "$DESKTOP_TARGET" "deb")"
@@ -760,6 +803,7 @@ main() {
     require_command cmake
     require_command sed
     require_command go
+    require_command tar
     if [[ "$BUILD_DEB" == true ]]; then
         if command -v dpkg-deb >/dev/null 2>&1; then
             :
@@ -790,7 +834,7 @@ main() {
 
     update_pubspec_version
     build_release_bundle
-    build_web_binary_artifact
+    build_web_tarball_artifact
 
     prepare_rootfs_layout
     copy_application_files
