@@ -356,13 +356,25 @@ function New-ZipPayloadArchive {
     if (Test-Path -LiteralPath $OutputZipPath) {
         Remove-Item -Force -LiteralPath $OutputZipPath
     }
+    # 使用 ZipArchive 手工逐文件写入，避免 Compress-Archive 产物在部分 7-Zip 环境下的兼容性问题。
+    $sourceRoot = (Resolve-Path -LiteralPath $SourceDirectory).Path
+    $files = Get-ChildItem -LiteralPath $sourceRoot -Recurse -File
 
-    [System.IO.Compression.ZipFile]::CreateFromDirectory(
-        $SourceDirectory,
-        $OutputZipPath,
-        [System.IO.Compression.CompressionLevel]::Optimal,
-        $false
-    )
+    $zip = [System.IO.Compression.ZipFile]::Open($OutputZipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in $files) {
+            $relativePath = $file.FullName.Substring($sourceRoot.Length).TrimStart('\', '/')
+            $entryPath = $relativePath -replace '\\', '/'
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $zip,
+                $file.FullName,
+                $entryPath,
+                [System.IO.Compression.CompressionLevel]::Optimal
+            ) | Out-Null
+        }
+    } finally {
+        $zip.Dispose()
+    }
 }
 
 function New-CustomInstallerExe {
@@ -946,8 +958,8 @@ if ($PackageFormat -eq "zip") {
     if (Test-Path -LiteralPath $releaseZipFile) {
         Remove-Item -Force -LiteralPath $releaseZipFile
     }
-    Write-Step "Creating ZIP release package"
-    Compress-Archive -Path "$outputDir\*" -DestinationPath $releaseZipFile
+    Write-Step "Creating ZIP release package with .NET ZipArchive"
+    New-ZipPayloadArchive -SourceDirectory $outputDir -OutputZipPath $releaseZipFile
     Write-Ok "Release packaged: $releaseZipFile"
 } else {
     if (-not (Test-Path -LiteralPath $bootstrapSourceFile)) {
