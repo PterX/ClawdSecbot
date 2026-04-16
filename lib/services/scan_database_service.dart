@@ -161,6 +161,9 @@ class ScanDatabaseService {
       return {
         'skill_name': data['skill_name'],
         'skill_hash': data['skill_hash'],
+        'skill_path': data['skill_path'] ?? '',
+        'source_plugin': data['source_plugin'] ?? '',
+        'asset_id': data['asset_id'] ?? '',
         'scanned_at': data['scanned_at'],
         'safe': data['safe'] as bool? ?? false,
         'issues': (data['issues'] as List?)?.map((e) => e.toString()).toList() ??

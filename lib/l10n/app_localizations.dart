@@ -632,6 +632,60 @@ abstract class AppLocalizations {
   /// **'取消'**
   String get cancel;
 
+  /// No description provided for @mitigationDialogTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'风险处置'**
+  String get mitigationDialogTitle;
+
+  /// No description provided for @mitigationExecute.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行修复'**
+  String get mitigationExecute;
+
+  /// No description provided for @mitigationConfirmAutoFix.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定要执行自动修复吗？'**
+  String get mitigationConfirmAutoFix;
+
+  /// No description provided for @mitigationFieldRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'此项必填'**
+  String get mitigationFieldRequired;
+
+  /// No description provided for @mitigationFieldMinLength.
+  ///
+  /// In zh, this message translates to:
+  /// **'最小长度为 {length}'**
+  String mitigationFieldMinLength(int length);
+
+  /// No description provided for @mitigationFieldInvalidFormat.
+  ///
+  /// In zh, this message translates to:
+  /// **'格式不正确'**
+  String get mitigationFieldInvalidFormat;
+
+  /// No description provided for @mitigationFieldInvalidRegex.
+  ///
+  /// In zh, this message translates to:
+  /// **'无效的校验规则'**
+  String get mitigationFieldInvalidRegex;
+
+  /// No description provided for @mitigationUnsupportedFieldType.
+  ///
+  /// In zh, this message translates to:
+  /// **'不支持的字段类型'**
+  String get mitigationUnsupportedFieldType;
+
+  /// No description provided for @mitigationCommandCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'命令已复制到剪贴板'**
+  String get mitigationCommandCopied;
+
   /// No description provided for @aiModelConfig.
   ///
   /// In zh, this message translates to:
@@ -3433,14 +3487,62 @@ abstract class AppLocalizations {
   /// No description provided for @viewSkillScanResults.
   ///
   /// In zh, this message translates to:
-  /// **'技能检测结果'**
+  /// **'技能检测历史'**
   String get viewSkillScanResults;
 
   /// No description provided for @viewSkillScanResultsTitle.
   ///
   /// In zh, this message translates to:
-  /// **'技能检测结果'**
+  /// **'技能检测历史'**
   String get viewSkillScanResultsTitle;
+
+  /// No description provided for @rescanSecurityDiscovery.
+  ///
+  /// In zh, this message translates to:
+  /// **'安全发现'**
+  String get rescanSecurityDiscovery;
+
+  /// No description provided for @rescanAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'所有信息'**
+  String get rescanAll;
+
+  /// No description provided for @deleteRiskSkill.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除技能'**
+  String get deleteRiskSkill;
+
+  /// No description provided for @deleteRiskSkillConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认删除技能 \"{skill}\" 吗？'**
+  String deleteRiskSkillConfirm(String skill);
+
+  /// No description provided for @deleteRiskSkillSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'技能删除成功'**
+  String get deleteRiskSkillSuccess;
+
+  /// No description provided for @deleteRiskSkillAlreadyMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'技能目录已不存在，按已删除处理'**
+  String get deleteRiskSkillAlreadyMissing;
+
+  /// No description provided for @deleteRiskSkillFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'技能删除失败'**
+  String get deleteRiskSkillFailed;
+
+  /// No description provided for @deleteRiskSkillUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'缺少技能路径或哈希，无法删除'**
+  String get deleteRiskSkillUnavailable;
 
   /// No description provided for @noSkillScanResults.
   ///

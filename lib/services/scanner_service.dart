@@ -105,6 +105,8 @@ class BotScanner {
       final riskySkills = await ScanDatabaseService().getRiskySkills();
       for (var skill in riskySkills) {
         final skillName = skill['skill_name'] as String;
+        final skillPath = (skill['skill_path'] ?? '').toString();
+        final skillHash = (skill['skill_hash'] ?? '').toString();
         final issues = skill['issues'] as List<String>;
         final issueCount = issues.length;
 
@@ -125,7 +127,12 @@ class BotScanner {
         risks.add(
           RiskInfo(
             id: 'riskSkillSecurityIssue',
-            args: {'skillName': skillName, 'issueCount': issueCount},
+            args: {
+              'skillName': skillName,
+              'issueCount': issueCount,
+              if (skillPath.isNotEmpty) 'skillPath': skillPath,
+              if (skillHash.isNotEmpty) 'skillHash': skillHash,
+            },
             title: title,
             description: description,
             level: RiskLevel.high,

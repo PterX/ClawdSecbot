@@ -2,7 +2,10 @@ package service
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"go_lib/core/repository"
 )
 
 // TestSaveScanResult 验证保存扫描结果
@@ -97,6 +100,8 @@ func TestGetScannedSkillHashes(t *testing.T) {
 	SaveSkillScanResult(`{
 		"skill_name": "test-skill",
 		"skill_hash": "hash123",
+		"skill_path": "/tmp/test-skill",
+		"source_plugin": "openclaw",
 		"safe": true,
 		"issues": []
 	}`)
@@ -133,6 +138,41 @@ func TestSaveSkillScanResult(t *testing.T) {
 	}
 }
 
+func TestSaveSkillScanResult_PreservesStructuredIssueJSON(t *testing.T) {
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	input := `{
+		"skill_name": "dangerous-skill",
+		"skill_hash": "evidence-hash",
+		"safe": false,
+		"issues": [
+			"{\"type\":\"prompt_injection\",\"severity\":\"high\",\"file\":\"SKILL.md\",\"description\":\"Injected template\",\"evidence\":\"prompt = f'Execute {user_input}'\"}"
+		]
+	}`
+
+	result := SaveSkillScanResult(input)
+	if result["success"] != true {
+		t.Fatalf("Expected success=true, got: %v", result)
+	}
+
+	saved := GetSkillScanByHash("evidence-hash")
+	if saved["success"] != true {
+		t.Fatalf("Expected saved lookup success=true, got: %v", saved)
+	}
+
+	data, ok := saved["data"].(*repository.SkillScanRecord)
+	if !ok || data == nil {
+		t.Fatalf("Expected SkillScanRecord, got %T", saved["data"])
+	}
+	if len(data.Issues) != 1 || data.Issues[0] == "" {
+		t.Fatalf("Expected one persisted issue, got %+v", data.Issues)
+	}
+	if !strings.Contains(data.Issues[0], `"evidence":"prompt = f'Execute {user_input}'"`) {
+		t.Fatalf("Expected evidence to be preserved, got %s", data.Issues[0])
+	}
+}
+
 // TestSaveSkillScanResult_InvalidJSON 验证JSON解析错误
 func TestSaveSkillScanResult_InvalidJSON(t *testing.T) {
 	cleanup := setupTestDB(t)
@@ -165,7 +205,7 @@ func TestGetSkillScanByHash(t *testing.T) {
 	}
 }
 
-// TestDeleteSkillScan 验证删除技能扫描记录
+// TestDeleteSkillScan 验证删除技能扫描记录（软删除）
 func TestDeleteSkillScan(t *testing.T) {
 	cleanup := setupTestDB(t)
 	defer cleanup()
@@ -177,15 +217,19 @@ func TestDeleteSkillScan(t *testing.T) {
 		"issues": []
 	}`)
 
-	result := DeleteSkillScan("to-delete")
+	result := DeleteSkillScan("del_hash")
 	if result["success"] != true {
 		t.Fatalf("Expected success=true, got: %v", result)
 	}
 
-	// 验证已删除
+	// 验证记录仍可查询，且带删除标记
 	check := GetSkillScanByHash("del_hash")
-	if check["data"] != nil {
-		t.Error("Expected nil data after deletion")
+	data, ok := check["data"].(*repository.SkillScanRecord)
+	if !ok || data == nil {
+		t.Fatalf("Expected SkillScanRecord after soft delete, got %T", check["data"])
+	}
+	if data.DeletedAt == "" {
+		t.Error("Expected deleted_at to be populated after soft delete")
 	}
 }
 
@@ -197,6 +241,7 @@ func TestGetRiskySkills(t *testing.T) {
 	// 保存一个安全的和一个有风险的
 	SaveSkillScanResult(`{"skill_name": "safe-skill", "skill_hash": "safe1", "safe": true, "issues": []}`)
 	SaveSkillScanResult(`{"skill_name": "risky-skill", "skill_hash": "risky1", "safe": false, "issues": ["danger"]}`)
+	DeleteSkillScan("risky1")
 
 	result := GetRiskySkills()
 	if result["success"] != true {
@@ -207,8 +252,8 @@ func TestGetRiskySkills(t *testing.T) {
 	dataJSON, _ := json.Marshal(result["data"])
 	var records []map[string]interface{}
 	json.Unmarshal(dataJSON, &records)
-	if len(records) != 1 {
-		t.Errorf("Expected 1 risky skill, got %d", len(records))
+	if len(records) != 0 {
+		t.Errorf("Expected deleted risky skill to be excluded, got %d", len(records))
 	}
 }
 
@@ -221,7 +266,7 @@ func TestGetAllSkillScans(t *testing.T) {
 	SaveSkillScanResult(`{"skill_name": "safe-skill", "skill_hash": "hash_s", "safe": true, "issues": []}`)
 	SaveSkillScanResult(`{"skill_name": "risky-skill", "skill_hash": "hash_r", "safe": false, "issues": ["danger"]}`)
 	SaveSkillScanResult(`{"skill_name": "trusted-skill", "skill_hash": "hash_t", "safe": false, "issues": ["known-issue"]}`)
-	TrustSkill("trusted-skill")
+	TrustSkill("hash_t")
 
 	result := GetAllSkillScans()
 	if result["success"] != true {

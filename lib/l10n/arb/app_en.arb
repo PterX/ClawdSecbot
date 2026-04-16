@@ -141,6 +141,20 @@
   "mitigate": "Mitigate",
   "fixApplied": "Fix applied successfully",
   "cancel": "Cancel",
+  "mitigationDialogTitle": "Risk Mitigation",
+  "mitigationExecute": "Execute Fix",
+  "mitigationConfirmAutoFix": "Are you sure you want to execute the automatic remediation?",
+  "mitigationFieldRequired": "This field is required",
+  "mitigationFieldMinLength": "Minimum length is {length}",
+  "@mitigationFieldMinLength": {
+    "placeholders": {
+      "length": {"type": "int"}
+    }
+  },
+  "mitigationFieldInvalidFormat": "Invalid format",
+  "mitigationFieldInvalidRegex": "Invalid validation rule",
+  "mitigationUnsupportedFieldType": "Unsupported field type",
+  "mitigationCommandCopied": "Command copied to clipboard",
   "aiModelConfig": "AI Model Config",
 
   "skillScanTitle": "AI Skill Security Analysis",
@@ -1042,8 +1056,21 @@
   "copyEventInfo": "Copy Event Info",
   "refresh": "Refresh",
   "clearAll": "Clear All",
-  "viewSkillScanResults": "Skill Scan Results",
-  "viewSkillScanResultsTitle": "Skill Scan Results",
+  "viewSkillScanResults": "Skill Scan History",
+  "viewSkillScanResultsTitle": "Skill Scan History",
+  "rescanSecurityDiscovery": "Re-run security discovery",
+  "rescanAll": "All information",
+  "deleteRiskSkill": "Delete Skill",
+  "deleteRiskSkillConfirm": "Delete skill \"{skill}\"?",
+  "@deleteRiskSkillConfirm": {
+    "placeholders": {
+      "skill": {"type": "String"}
+    }
+  },
+  "deleteRiskSkillSuccess": "Skill deleted successfully",
+  "deleteRiskSkillAlreadyMissing": "Skill directory already missing, treated as deleted",
+  "deleteRiskSkillFailed": "Failed to delete skill",
+  "deleteRiskSkillUnavailable": "Missing skill path or hash, cannot delete",
   "noSkillScanResults": "No skill scan results yet",
   "skillScanResultScannedAt": "Scanned: {time}",
   "@skillScanResultScannedAt": {

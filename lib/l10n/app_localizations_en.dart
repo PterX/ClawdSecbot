@@ -315,6 +315,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cancel => 'Cancel';
 
   @override
+  String get mitigationDialogTitle => 'Risk Mitigation';
+
+  @override
+  String get mitigationExecute => 'Execute Fix';
+
+  @override
+  String get mitigationConfirmAutoFix =>
+      'Are you sure you want to execute the automatic remediation?';
+
+  @override
+  String get mitigationFieldRequired => 'This field is required';
+
+  @override
+  String mitigationFieldMinLength(int length) {
+    return 'Minimum length is $length';
+  }
+
+  @override
+  String get mitigationFieldInvalidFormat => 'Invalid format';
+
+  @override
+  String get mitigationFieldInvalidRegex => 'Invalid validation rule';
+
+  @override
+  String get mitigationUnsupportedFieldType => 'Unsupported field type';
+
+  @override
+  String get mitigationCommandCopied => 'Command copied to clipboard';
+
+  @override
   String get aiModelConfig => 'AI Model Config';
 
   @override
@@ -1955,10 +1985,38 @@ class AppLocalizationsEn extends AppLocalizations {
   String get clearAll => 'Clear All';
 
   @override
-  String get viewSkillScanResults => 'Skill Scan Results';
+  String get viewSkillScanResults => 'Skill Scan History';
 
   @override
-  String get viewSkillScanResultsTitle => 'Skill Scan Results';
+  String get viewSkillScanResultsTitle => 'Skill Scan History';
+
+  @override
+  String get rescanSecurityDiscovery => 'Re-run security discovery';
+
+  @override
+  String get rescanAll => 'All information';
+
+  @override
+  String get deleteRiskSkill => 'Delete Skill';
+
+  @override
+  String deleteRiskSkillConfirm(String skill) {
+    return 'Delete skill \"$skill\"?';
+  }
+
+  @override
+  String get deleteRiskSkillSuccess => 'Skill deleted successfully';
+
+  @override
+  String get deleteRiskSkillAlreadyMissing =>
+      'Skill directory already missing, treated as deleted';
+
+  @override
+  String get deleteRiskSkillFailed => 'Failed to delete skill';
+
+  @override
+  String get deleteRiskSkillUnavailable =>
+      'Missing skill path or hash, cannot delete';
 
   @override
   String get noSkillScanResults => 'No skill scan results yet';
