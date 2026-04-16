@@ -320,6 +320,12 @@ func GetShepherdSensitiveActionsFFI(assetIDC *C.char) *C.char {
 	return jsonToCString(service.GetShepherdSensitiveActions(C.GoString(assetIDC)))
 }
 
+//export GetShepherdSensitiveActionsByAssetFFI
+func GetShepherdSensitiveActionsByAssetFFI(assetNameC, assetIDC *C.char) *C.char {
+	_ = C.GoString(assetNameC)
+	return jsonToCString(service.GetShepherdSensitiveActions(C.GoString(assetIDC)))
+}
+
 //export SaveShepherdSensitiveActionsFFI
 func SaveShepherdSensitiveActionsFFI(jsonC *C.char) *C.char {
 	return jsonToCString(service.SaveShepherdSensitiveActions(C.GoString(jsonC)))

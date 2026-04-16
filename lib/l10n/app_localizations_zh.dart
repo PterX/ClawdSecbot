@@ -304,6 +304,35 @@ class AppLocalizationsZh extends AppLocalizations {
   String get cancel => '取消';
 
   @override
+  String get mitigationDialogTitle => '风险处置';
+
+  @override
+  String get mitigationExecute => '执行修复';
+
+  @override
+  String get mitigationConfirmAutoFix => '确定要执行自动修复吗？';
+
+  @override
+  String get mitigationFieldRequired => '此项必填';
+
+  @override
+  String mitigationFieldMinLength(int length) {
+    return '最小长度为 $length';
+  }
+
+  @override
+  String get mitigationFieldInvalidFormat => '格式不正确';
+
+  @override
+  String get mitigationFieldInvalidRegex => '无效的校验规则';
+
+  @override
+  String get mitigationUnsupportedFieldType => '不支持的字段类型';
+
+  @override
+  String get mitigationCommandCopied => '命令已复制到剪贴板';
+
+  @override
   String get aiModelConfig => 'AI模型配置';
 
   @override
@@ -1883,10 +1912,36 @@ class AppLocalizationsZh extends AppLocalizations {
   String get clearAll => '清空';
 
   @override
-  String get viewSkillScanResults => '技能检测结果';
+  String get viewSkillScanResults => '技能检测历史';
 
   @override
-  String get viewSkillScanResultsTitle => '技能检测结果';
+  String get viewSkillScanResultsTitle => '技能检测历史';
+
+  @override
+  String get rescanSecurityDiscovery => '安全发现';
+
+  @override
+  String get rescanAll => '所有信息';
+
+  @override
+  String get deleteRiskSkill => '删除技能';
+
+  @override
+  String deleteRiskSkillConfirm(String skill) {
+    return '确认删除技能 \"$skill\" 吗？';
+  }
+
+  @override
+  String get deleteRiskSkillSuccess => '技能删除成功';
+
+  @override
+  String get deleteRiskSkillAlreadyMissing => '技能目录已不存在，按已删除处理';
+
+  @override
+  String get deleteRiskSkillFailed => '技能删除失败';
+
+  @override
+  String get deleteRiskSkillUnavailable => '缺少技能路径或哈希，无法删除';
 
   @override
   String get noSkillScanResults => '暂无技能扫描记录';

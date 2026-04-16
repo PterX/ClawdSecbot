@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:path/path.dart' as path;
-
 import '../core_transport/transport_registry.dart';
 import '../models/llm_config_model.dart';
 import '../utils/app_logger.dart';
@@ -25,6 +23,17 @@ class BatchScanProgress {
     required this.currentSkill,
     required this.completed,
     this.error,
+  });
+}
+
+/// Skill deletion result.
+class SkillDeleteResult {
+  final bool success;
+  final bool alreadyMissing;
+
+  const SkillDeleteResult({
+    required this.success,
+    this.alreadyMissing = false,
   });
 }
 
@@ -176,18 +185,29 @@ class SkillSecurityAnalyzerService {
     }
   }
 
-  Future<bool> deleteSkill(String skillPath) async {
+  Future<SkillDeleteResult> deleteSkill({
+    required String skillPath,
+    required String skillHash,
+  }) async {
     try {
-      final result = _callOneArg('DeleteSkill', skillPath);
-      if (result['success'] == true) {
-        final skillName = path.basename(skillPath);
-        await ScanDatabaseService().deleteSkillScan(skillName);
-        return true;
+      final normalizedPath = skillPath.trim();
+      final normalizedHash = skillHash.trim();
+      if (normalizedPath.isEmpty || normalizedHash.isEmpty) {
+        return const SkillDeleteResult(success: false);
       }
-      return false;
+
+      final result = _callOneArg('DeleteSkill', normalizedPath);
+      if (result['success'] == true) {
+        await ScanDatabaseService().deleteSkillScan(normalizedHash);
+        return SkillDeleteResult(
+          success: true,
+          alreadyMissing: result['already_missing'] == true,
+        );
+      }
+      return const SkillDeleteResult(success: false);
     } catch (e) {
       appLogger.error('[SkillSecurityAnalyzer] Delete skill error', e);
-      return false;
+      return const SkillDeleteResult(success: false);
     }
   }
 

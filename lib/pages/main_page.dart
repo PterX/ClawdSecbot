@@ -29,6 +29,7 @@ import '../services/metrics_database_service.dart';
 import '../services/model_config_database_service.dart';
 import '../services/protection_database_service.dart';
 import '../services/scan_database_service.dart';
+import '../services/skill_security_analyzer_service.dart';
 import '../services/bookmark_service.dart';
 import '../services/native_library_service.dart';
 import '../services/plugin_service.dart';
@@ -70,6 +71,7 @@ class _MainPageState extends State<MainPage>
   ScanResult? _result;
   final BotScanner _scanner = BotScanner();
   StreamSubscription<String>? _logSubscription;
+  RescanAction _selectedRescanAction = RescanAction.securityDiscovery;
 
   // ============ 防护状态 ============
   final Set<String> _protectedAssetIDs = {};
@@ -95,6 +97,7 @@ class _MainPageState extends State<MainPage>
   bool _launchAtStartupEnabled = false;
   int _scheduledScanIntervalSeconds = 0;
   Timer? _scheduledScanTimer;
+  bool _apiServerEnabled = false;
 
   /// Future tracking heavy initialization (DB, plugins, etc.)
   Future<void>? _initFuture;
@@ -1662,6 +1665,77 @@ class _MainPageState extends State<MainPage>
     }
   }
 
+  void _handleRescanActionChanged(RescanAction action) {
+    if (_selectedRescanAction == action) return;
+    setState(() {
+      _selectedRescanAction = action;
+    });
+  }
+
+  Future<void> _deleteRiskSkill(RiskInfo risk) async {
+    final l10n = AppLocalizations.of(context)!;
+    final args = risk.args ?? const <String, Object>{};
+    final skillName = (args['skillName'] ?? args['skill_name'] ?? '')
+        .toString()
+        .trim();
+    final skillPath = (args['skillPath'] ?? args['skill_path'] ?? '')
+        .toString()
+        .trim();
+    final skillHash = (args['skillHash'] ?? args['skill_hash'] ?? '')
+        .toString()
+        .trim();
+
+    if (skillPath.isEmpty || skillHash.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.deleteRiskSkillUnavailable)));
+      return;
+    }
+
+    final displayName = skillName.isNotEmpty ? skillName : skillPath;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.deleteRiskSkill),
+        content: Text(l10n.deleteRiskSkillConfirm(displayName)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.localeName.startsWith('zh') ? '确认' : 'Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final deleteResult = await SkillSecurityAnalyzerService().deleteSkill(
+      skillPath: skillPath,
+      skillHash: skillHash,
+    );
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          deleteResult.success
+              ? (deleteResult.alreadyMissing
+                    ? l10n.deleteRiskSkillAlreadyMissing
+                    : l10n.deleteRiskSkillSuccess)
+              : l10n.deleteRiskSkillFailed,
+        ),
+      ),
+    );
+
+    if (deleteResult.success) {
+      await _startScan();
+    }
+  }
+
   void _showSkillScanDialog() async {
     await showDialog(
       context: context,
@@ -1700,6 +1774,12 @@ class _MainPageState extends State<MainPage>
         onReauthorizeDirectory: () {
           Navigator.of(dialogContext).pop();
           reauthorizeDirectory();
+        },
+        apiServerEnabled: _apiServerEnabled,
+        onToggleApiServer: (enabled) {
+          setState(() {
+            _apiServerEnabled = enabled;
+          });
         },
       ),
     );
@@ -2256,12 +2336,15 @@ class _MainPageState extends State<MainPage>
       result: result,
       protectedAssets: _protectedAssetIDs,
       isRestoringProtection: _isRestoringProtection,
+      selectedRescanAction: _selectedRescanAction,
+      onRescanActionChanged: _handleRescanActionChanged,
       onRescan: _resetScan,
       onViewSkillScanResults: _showSkillScanResultsDialog,
       onShowProtectionConfig: _showProtectionConfigDialog,
       onShowProtectionMonitor: (asset) =>
           _showProtectionMonitorResolved(asset),
       onShowMitigation: (risk) => _showMitigationDialog(context, risk),
+      onDeleteRiskSkill: _deleteRiskSkill,
     );
   }
 }
