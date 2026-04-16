@@ -99,6 +99,8 @@ class _WebHomePageState extends State<WebHomePage> {
   bool _uiSessionOwned = false;
   String? _uiSessionError;
   bool _postBootstrapInitialized = false;
+  Future<void>? _postBootstrapInitFuture;
+  bool _sessionAcquireRetryInFlight = false;
   int _scheduledScanIntervalSeconds = 0;
   Timer? _scheduledScanTimer;
   bool _launchAtStartupEnabled = false;
@@ -214,6 +216,10 @@ class _WebHomePageState extends State<WebHomePage> {
       _bootstrapped = false;
       _uiSessionOwned = false;
       _postBootstrapInitialized = false;
+      _postBootstrapInitFuture = null;
+      _sessionAcquireRetryInFlight = false;
+      _sessionAcquireRetryTimer?.cancel();
+      _sessionAcquireRetryTimer = null;
     }
   }
 
@@ -344,6 +350,7 @@ class _WebHomePageState extends State<WebHomePage> {
     );
     if (result['success'] == true) {
       _sessionAcquireRetryTimer?.cancel();
+      _sessionAcquireRetryTimer = null;
       _uiSessionOwned = true;
       _uiSessionError = null;
       _startSessionHeartbeat();
@@ -372,6 +379,16 @@ class _WebHomePageState extends State<WebHomePage> {
     if (_postBootstrapInitialized) {
       return;
     }
+    if (_postBootstrapInitFuture != null) {
+      await _postBootstrapInitFuture;
+      return;
+    }
+
+    _postBootstrapInitFuture = _runPostBootstrapInitInternal();
+    await _postBootstrapInitFuture;
+  }
+
+  Future<void> _runPostBootstrapInitInternal() async {
     try {
       await PluginService().initializePlugin();
       await _syncLanguageToBackend();
@@ -380,6 +397,8 @@ class _WebHomePageState extends State<WebHomePage> {
       _postBootstrapInitialized = true;
     } catch (e) {
       appLogger.warning('[WebMain] post-bootstrap init failed: $e');
+    } finally {
+      _postBootstrapInitFuture = null;
     }
   }
 
@@ -418,6 +437,16 @@ class _WebHomePageState extends State<WebHomePage> {
       return;
     }
     _sessionAcquireRetryTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      unawaited(_handleSessionAcquireRetryTick());
+    });
+  }
+
+  Future<void> _handleSessionAcquireRetryTick() async {
+    if (_sessionAcquireRetryInFlight) {
+      return;
+    }
+    _sessionAcquireRetryInFlight = true;
+    try {
       if (_transport == null || !_bootstrapped || _uiSessionOwned) {
         return;
       }
@@ -428,19 +457,22 @@ class _WebHomePageState extends State<WebHomePage> {
         }
         return;
       }
-      unawaited(_runPostBootstrapInitIfNeeded());
+      await _runPostBootstrapInitIfNeeded();
       _sessionAcquireRetryTimer?.cancel();
       _sessionAcquireRetryTimer = null;
       if (mounted) {
         setState(() {});
       }
-    });
+    } finally {
+      _sessionAcquireRetryInFlight = false;
+    }
   }
 
   void _releaseUiSessionLock() {
     _stopSessionHeartbeat();
     _sessionAcquireRetryTimer?.cancel();
     _sessionAcquireRetryTimer = null;
+    _sessionAcquireRetryInFlight = false;
     if (_transport == null) {
       return;
     }
@@ -1770,10 +1802,10 @@ class _WebHomePageState extends State<WebHomePage> {
               runSpacing: 10,
               children: [
                 FilledButton.icon(
-                  onPressed: () {
+                  onPressed: () async {
                     final acquired = _tryAcquireUiSessionLock();
                     if (acquired && mounted) {
-                      unawaited(_runPostBootstrapInitIfNeeded());
+                      await _runPostBootstrapInitIfNeeded();
                       setState(() {});
                       return;
                     }
