@@ -9,6 +9,7 @@ import '../utils/locale_utils.dart';
 class AppSettingsDatabaseService {
   static const String scheduledScanIntervalKey =
       'scheduled_scan_interval_seconds';
+  static const String _apiServerEnabledKey = 'api_server_enabled';
   static final AppSettingsDatabaseService _instance =
       AppSettingsDatabaseService._internal();
 
@@ -145,10 +146,11 @@ class AppSettingsDatabaseService {
   /// Get scheduled scan interval in seconds.
   ///
   /// Returns 0 when the setting is missing, invalid, or disabled.
-  Future<int> getScheduledScanIntervalSeconds() async {
+  Future<int> getScheduledScanIntervalSeconds({int defaultValue = 0}) async {
     final value = await getSetting(scheduledScanIntervalKey);
     if (value.isEmpty) {
-      return 0;
+      await setScheduledScanIntervalSeconds(defaultValue);
+      return defaultValue;
     }
 
     final seconds = int.tryParse(value);
@@ -156,7 +158,7 @@ class AppSettingsDatabaseService {
       appLogger.warning(
         '[AppSettingsDB] Invalid scheduled scan interval value: $value',
       );
-      return 0;
+      return defaultValue;
     }
 
     return seconds;
@@ -174,5 +176,24 @@ class AppSettingsDatabaseService {
     }
 
     return await saveSetting(scheduledScanIntervalKey, seconds.toString());
+  }
+
+  /// 设置 API 服务开关状态。
+  Future<bool> setApiServerEnabled(bool enabled) async {
+    return await saveSetting(_apiServerEnabledKey, enabled ? 'true' : 'false');
+  }
+
+  /// 获取 API 服务开关状态，默认开启。
+  ///
+  /// 当首次启动未写入配置时，会自动写入默认值，保证后续读取一致。
+  Future<bool> getApiServerEnabled({bool defaultValue = true}) async {
+    final value = await getSetting(_apiServerEnabledKey);
+    if (value.isEmpty) {
+      await setApiServerEnabled(defaultValue);
+      return defaultValue;
+    }
+
+    final normalized = value.trim().toLowerCase();
+    return normalized == 'true' || normalized == '1';
   }
 }
