@@ -404,16 +404,20 @@ func RestoreToInitialConfigByAssetID(assetID string) string {
 
 func NotifyAppExitByPlugin(assetName, assetID string) string {
 	assetID = strings.TrimSpace(assetID)
+	assetName = strings.TrimSpace(assetName)
 	if assetID != "" {
 		plugin := GetPluginManager().GetPluginByAssetID(assetID)
-		if plugin == nil {
+		if plugin != nil {
+			cap, ok := plugin.(ApplicationLifecycleCapability)
+			if !ok {
+				return capabilityError(fmt.Errorf("plugin %s does not support capability: application_exit", plugin.GetAssetName()))
+			}
+			return cap.OnAppExit(assetID)
+		}
+		if assetName == "" {
 			return capabilityError(fmt.Errorf("no plugin found for asset_id: %s", assetID))
 		}
-		cap, ok := plugin.(ApplicationLifecycleCapability)
-		if !ok {
-			return capabilityError(fmt.Errorf("plugin %s does not support capability: application_exit", plugin.GetAssetName()))
-		}
-		return cap.OnAppExit(assetID)
+		logging.Warning("Application exit capability fallback to asset_name routing: asset_id=%s asset_name=%s", assetID, assetName)
 	}
 	plugin, err := resolvePluginByCapability(assetName, "application_exit", func(p BotPlugin) bool {
 		_, ok := p.(ApplicationLifecycleCapability)
@@ -422,21 +426,25 @@ func NotifyAppExitByPlugin(assetName, assetID string) string {
 	if err != nil {
 		return capabilityError(err)
 	}
-	return plugin.(ApplicationLifecycleCapability).OnAppExit("")
+	return plugin.(ApplicationLifecycleCapability).OnAppExit(assetID)
 }
 
 func RestoreBotDefaultStateByPlugin(assetName, assetID string) string {
 	assetID = strings.TrimSpace(assetID)
+	assetName = strings.TrimSpace(assetName)
 	if assetID != "" {
 		plugin := GetPluginManager().GetPluginByAssetID(assetID)
-		if plugin == nil {
+		if plugin != nil {
+			cap, ok := plugin.(ApplicationLifecycleCapability)
+			if !ok {
+				return capabilityError(fmt.Errorf("plugin %s does not support capability: restore_bot_default_state", plugin.GetAssetName()))
+			}
+			return cap.RestoreBotDefaultState(assetID)
+		}
+		if assetName == "" {
 			return capabilityError(fmt.Errorf("no plugin found for asset_id: %s", assetID))
 		}
-		cap, ok := plugin.(ApplicationLifecycleCapability)
-		if !ok {
-			return capabilityError(fmt.Errorf("plugin %s does not support capability: restore_bot_default_state", plugin.GetAssetName()))
-		}
-		return cap.RestoreBotDefaultState(assetID)
+		logging.Warning("Restore bot default state capability fallback to asset_name routing: asset_id=%s asset_name=%s", assetID, assetName)
 	}
 	plugin, err := resolvePluginByCapability(assetName, "restore_bot_default_state", func(p BotPlugin) bool {
 		_, ok := p.(ApplicationLifecycleCapability)
@@ -445,5 +453,5 @@ func RestoreBotDefaultStateByPlugin(assetName, assetID string) string {
 	if err != nil {
 		return capabilityError(err)
 	}
-	return plugin.(ApplicationLifecycleCapability).RestoreBotDefaultState("")
+	return plugin.(ApplicationLifecycleCapability).RestoreBotDefaultState(assetID)
 }

@@ -163,11 +163,25 @@ func TestNotifyAppExitByPlugin_PrioritizesAssetID(t *testing.T) {
 	}
 }
 
-func TestNotifyAppExitByPlugin_AssetIDMissingBindingReturnsError(t *testing.T) {
+func TestNotifyAppExitByPlugin_AssetIDMissingBindingFallsBackToAssetName(t *testing.T) {
+	pm := resetCapabilityTestPluginManager(t)
+	openPlugin := newLifecycleCapabilityTestPlugin("Openclaw")
+	pm.Register(openPlugin)
+
+	result := NotifyAppExitByPlugin("Openclaw", "openclaw:missing-binding")
+	if !strings.Contains(result, `"plugin":"openclaw"`) {
+		t.Fatalf("expected fallback routing by asset_name, got: %s", result)
+	}
+	if len(openPlugin.onAppExitCalls) != 1 || openPlugin.onAppExitCalls[0] != "openclaw:missing-binding" {
+		t.Fatalf("expected OnAppExit called once with original asset_id, got: %#v", openPlugin.onAppExitCalls)
+	}
+}
+
+func TestNotifyAppExitByPlugin_AssetIDMissingBindingWithoutAssetNameReturnsError(t *testing.T) {
 	pm := resetCapabilityTestPluginManager(t)
 	pm.Register(newLifecycleCapabilityTestPlugin("Openclaw"))
 
-	result := NotifyAppExitByPlugin("Openclaw", "missing-asset-id")
+	result := NotifyAppExitByPlugin("", "missing-asset-id")
 	if !strings.Contains(result, "no plugin found for asset_id: missing-asset-id") {
 		t.Fatalf("expected asset_id binding error, got: %s", result)
 	}
@@ -195,6 +209,20 @@ func TestRestoreBotDefaultStateByPlugin_PrioritizesAssetID(t *testing.T) {
 	}
 	if len(openPlugin.restoreDefaultCalls) != 0 {
 		t.Fatalf("expected openclaw RestoreBotDefaultState not called, got: %#v", openPlugin.restoreDefaultCalls)
+	}
+}
+
+func TestRestoreBotDefaultStateByPlugin_AssetIDMissingBindingFallsBackToAssetName(t *testing.T) {
+	pm := resetCapabilityTestPluginManager(t)
+	openPlugin := newLifecycleCapabilityTestPlugin("Openclaw")
+	pm.Register(openPlugin)
+
+	result := RestoreBotDefaultStateByPlugin("Openclaw", "openclaw:missing-binding")
+	if !strings.Contains(result, `"plugin":"openclaw"`) {
+		t.Fatalf("expected fallback routing by asset_name, got: %s", result)
+	}
+	if len(openPlugin.restoreDefaultCalls) != 1 || openPlugin.restoreDefaultCalls[0] != "openclaw:missing-binding" {
+		t.Fatalf("expected RestoreBotDefaultState called once with original asset_id, got: %#v", openPlugin.restoreDefaultCalls)
 	}
 }
 
