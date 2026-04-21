@@ -25,31 +25,39 @@ func (p *auditLogPersistor) loopOverflow() {
 	}
 }
 
-func (p *auditLogPersistor) enqueuePersistTask(task auditPersistTask, source string) {
+func (p *auditLogPersistor) enqueuePersistTask(task auditPersistTask, source string) bool {
 	if p == nil {
-		return
+		return false
 	}
+	logID := strings.TrimSpace(task.Log.ID)
+	now := time.Now()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	select {
 	case p.queue <- task:
-		return
+		p.rememberLatestSeqLocked(logID, task.Seq, now)
+		return true
 	default:
 	}
 
 	select {
 	case p.overflowQueue <- task:
+		p.rememberLatestSeqLocked(logID, task.Seq, now)
 		logging.Warning(
 			"[AuditLog] Persist queue overflow, redirected task: log_id=%s seq=%d source=%s",
-			strings.TrimSpace(task.Log.ID),
+			logID,
 			task.Seq,
 			source,
 		)
+		return true
 	default:
 		logging.Warning(
 			"[AuditLog] Persist queue saturated, dropping task: log_id=%s seq=%d source=%s",
-			strings.TrimSpace(task.Log.ID),
+			logID,
 			task.Seq,
 			source,
 		)
+		return false
 	}
 }
 

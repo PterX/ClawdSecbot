@@ -685,9 +685,10 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 				}
 
 				if skipShepherdForSandboxBlock {
+					sandboxReason := "tool result already blocked by ClawdSecbot sandbox"
 					pp.emitMonitorSecurityDecision(
 						"SANDBOX_BLOCKED",
-						"tool result already blocked by ClawdSecbot sandbox",
+						sandboxReason,
 						false,
 						"",
 					)
@@ -696,7 +697,7 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 							requestID,
 							"BLOCK",
 							"SANDBOX_BLOCKED",
-							"tool result already blocked by ClawdSecbot sandbox",
+							sandboxReason,
 							100,
 						)
 					})
