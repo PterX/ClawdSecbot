@@ -289,7 +289,7 @@ func (p *auditLogPersistor) retry(task auditPersistTask) {
 	}
 	nextTask := task
 	nextTask.Attempt++
-	p.enqueuePersistTask(nextTask, "retry")
+	_ = p.enqueuePersistTask(nextTask, "retry")
 }
 
 func (p *auditLogPersistor) rememberLatestSeq(logID string, seq int64) {
@@ -302,10 +302,21 @@ func (p *auditLogPersistor) rememberLatestSeq(logID string, seq int64) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.rememberLatestSeqLocked(logID, seq, time.Now())
+}
+
+// rememberLatestSeqLocked 在持有 p.mu 时推进指定日志的最新序列号。
+func (p *auditLogPersistor) rememberLatestSeqLocked(logID string, seq int64, now time.Time) {
+	if p == nil {
+		return
+	}
+	logID = strings.TrimSpace(logID)
+	if logID == "" || seq <= 0 {
+		return
+	}
 	if p.latestSeq == nil || len(p.latestSeq) == 0 {
 		p.latestSeq = make(map[string]auditPersistSeqState)
 	}
-	now := time.Now()
 	current := p.latestSeq[logID]
 	if seq > current.Seq {
 		p.latestSeq[logID] = auditPersistSeqState{
@@ -467,8 +478,7 @@ func toRepositoryAuditLog(log AuditLog) (*repository.AuditLog, error) {
 }
 
 func enqueueAuditLogPersist(log AuditLog) {
-	logID := strings.TrimSpace(log.ID)
-	if logID == "" {
+	if strings.TrimSpace(log.ID) == "" {
 		return
 	}
 	seq := log.PersistSeq
@@ -480,7 +490,6 @@ func enqueueAuditLogPersist(log AuditLog) {
 	if persistor == nil {
 		return
 	}
-	persistor.rememberLatestSeq(logID, seq)
 	task := auditPersistTask{Log: log, Attempt: 0, Seq: seq}
 	persistor.enqueuePersistTask(task, "enqueue")
 }
@@ -1402,8 +1411,12 @@ func GetAuditLogsInternal(limit, offset int, riskOnly bool) string {
 	all := make([]AuditLog, 0)
 	total := 0
 	for _, tracker := range trackers {
-		all = append(all, tracker.GetAuditLogs(0, 0, riskOnly)...)
-		total += tracker.GetAuditLogCount(riskOnly)
+		trackerTotal := tracker.GetAuditLogCount(riskOnly)
+		total += trackerTotal
+		if trackerTotal <= 0 {
+			continue
+		}
+		all = append(all, tracker.GetAuditLogs(trackerTotal, 0, riskOnly)...)
 	}
 
 	sort.Slice(all, func(i, j int) bool {
