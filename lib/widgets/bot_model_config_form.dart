@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../utils/app_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../l10n/app_localizations.dart';
 import '../models/llm_config_model.dart';
-import '../services/app_settings_database_service.dart';
 import '../services/model_config_service.dart';
 import '../services/model_config_database_service.dart';
 import '../services/protection_service.dart';
@@ -35,14 +33,8 @@ class BotModelConfigForm extends StatefulWidget {
 
 /// State for bot model configuration form.
 class BotModelConfigFormState extends State<BotModelConfigForm> {
-  /// Bot 模型按供应商草稿缓存键前缀。
-  static const String _providerDraftSettingKeyPrefix =
-      'bot_model_provider_drafts_v1';
-
   late BotModelConfigService _service;
   final ProviderService _providerService = ProviderService();
-  final AppSettingsDatabaseService _appSettingsService =
-      AppSettingsDatabaseService();
   bool _loading = true;
   bool _saving = false;
   bool _testing = false;
@@ -54,6 +46,9 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
   final TextEditingController _secretKeyController = TextEditingController();
   String _selectedType = 'openai';
   String _savedConfigSignature = '';
+
+  /// 按 provider 缓存的草稿，仅存在于内存中。
+  /// 切换 provider 不触发任何持久化，避免主线程被 FFI 同步调用阻塞。
   final Map<String, BotModelConfig> _providerDrafts = {};
 
   /// Dynamically loaded providers from Go layer.
@@ -170,32 +165,34 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
     ].join('|');
   }
 
-  /// Loads current configuration into the form.
+  /// 从数据库加载已保存的 Bot 模型配置并显示到对应 provider 的表单上。
+  /// 未保存过的 provider 仅保留内存空草稿，UI 字段留空并由 hint 展示默认值。
   Future<void> _loadConfig() async {
     try {
-      await _loadProviderDrafts();
       final config = await _service.loadConfig();
+      if (!mounted) return;
       if (config != null) {
         final selectedType = _normalizeSelectedType(config.provider);
         _providerDrafts[selectedType] = config;
-        final selectedConfig =
-            _providerDrafts[selectedType] ?? _createEmptyConfig(selectedType);
         setState(() {
           _selectedType = selectedType;
-          _applyConfigToControllers(selectedConfig);
+          _applyConfigToControllers(config);
           _savedConfigSignature = _buildConfigSignature(config);
           _loading = false;
         });
+        appLogger.info(
+          '[BotModelConfigForm] Loaded saved config from DB: provider=$selectedType',
+        );
       } else {
-        final selectedConfig =
-            _providerDrafts[_selectedType] ?? _createEmptyConfig(_selectedType);
+        final emptyConfig = _createEmptyConfig(_selectedType);
         setState(() {
-          _applyConfigToControllers(selectedConfig);
+          _applyConfigToControllers(emptyConfig);
           _savedConfigSignature = _buildConfigSignature(_buildCurrentConfig());
           _loading = false;
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -239,7 +236,6 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
       if (success) {
         _savedConfigSignature = _buildConfigSignature(config);
         _captureCurrentProviderDraft();
-        await _persistProviderDrafts();
         // Bot 模型保存后，如果代理正在运行且未延迟重启，需要完整重启
         if (!deferProxyRestart) {
           final protectionService = ProtectionService.forAsset(
@@ -385,10 +381,6 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
     }
   }
 
-  /// 生成 provider 草稿缓存设置键。
-  String get _providerDraftSettingKey =>
-      '$_providerDraftSettingKeyPrefix:${widget.assetName}:${widget.assetID}';
-
   /// 创建指定 provider 的空白配置。
   BotModelConfig _createEmptyConfig(String providerName) {
     return BotModelConfig(
@@ -415,8 +407,9 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
     _providerDrafts[_selectedType] = _buildCurrentConfig();
   }
 
-  /// 切换 provider 时恢复对应草稿，避免输入被清空。
-  Future<void> _handleProviderSelected(ProviderInfo provider) async {
+  /// 切换 provider 时只在内存中缓存当前草稿并恢复目标 provider 的内存草稿。
+  /// 不执行任何磁盘/FFI 持久化，避免阻塞主线程导致 Windows 界面未响应。
+  void _handleProviderSelected(ProviderInfo provider) {
     _captureCurrentProviderDraft();
     final targetConfig =
         _providerDrafts[provider.name] ?? _createEmptyConfig(provider.name);
@@ -426,60 +419,6 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
       _applyConfigToControllers(targetConfig);
       _error = null;
     });
-    await _persistProviderDrafts();
-  }
-
-  /// 从应用设置读取 provider 草稿缓存。
-  Future<void> _loadProviderDrafts() async {
-    final raw = await _appSettingsService.getSetting(_providerDraftSettingKey);
-    if (raw.isEmpty) {
-      return;
-    }
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map<String, dynamic>) {
-        return;
-      }
-      decoded.forEach((provider, value) {
-        if (value is! Map) {
-          return;
-        }
-        final data = Map<String, dynamic>.from(value);
-        _providerDrafts[provider] = BotModelConfig(
-          assetName: widget.assetName,
-          assetID: widget.assetID,
-          provider: _resolveProviderType(provider),
-          baseUrl: (data['base_url'] as String?) ?? '',
-          apiKey: (data['api_key'] as String?) ?? '',
-          model: (data['model'] as String?) ?? '',
-          secretKey: (data['secret_key'] as String?) ?? '',
-        );
-      });
-    } catch (e) {
-      appLogger.warning(
-        '[BotModelConfigForm] Failed to parse provider drafts: $e',
-      );
-    }
-  }
-
-  /// 持久化 provider 草稿缓存。
-  Future<void> _persistProviderDrafts() async {
-    final payload = <String, dynamic>{};
-    _providerDrafts.forEach((provider, config) {
-      payload[provider] = {
-        'base_url': config.baseUrl,
-        'api_key': config.apiKey,
-        'model': config.model,
-        'secret_key': config.secretKey,
-      };
-    });
-    final saved = await _appSettingsService.saveSetting(
-      _providerDraftSettingKey,
-      jsonEncode(payload),
-    );
-    if (!saved) {
-      appLogger.warning('[BotModelConfigForm] Failed to persist provider drafts');
-    }
   }
 
   /// Returns whether the form is currently saving.
@@ -553,7 +492,7 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
               label: provider.displayName,
               icon: _getIconForProvider(provider.icon),
               isSelected: isSelected,
-              onTap: () => unawaited(_handleProviderSelected(provider)),
+              onTap: () => _handleProviderSelected(provider),
             );
           }).toList(),
         ),
