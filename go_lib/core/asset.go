@@ -3,14 +3,14 @@ package core
 import (
 	"crypto/sha256"
 	"fmt"
-	"sort"
 	"strings"
 )
 
 // Asset 定义检测到的资产结构
 type Asset struct {
 	// ID is a deterministic fingerprint hash uniquely identifying this asset instance.
-	// Computed from name + config_path + ports + process_paths via ComputeAssetID().
+	// Computed from name + config_path via ComputeAssetID(); runtime-dynamic fields such
+	// as ports/process_paths are intentionally excluded so the ID is stable across restarts.
 	ID string `json:"id"`
 	// SourcePlugin is the asset name of the plugin that discovered this asset.
 	SourcePlugin string `json:"source_plugin"`
@@ -56,35 +56,16 @@ type DisplayItem struct {
 
 // ComputeAssetID generates a deterministic fingerprint ID for an asset instance.
 // The ID is composed of the lowercase asset name and a 12-char hex hash derived from
-// the config path, sorted ports, and sorted process paths.
-// Same instance scanned at different times always produces the same ID.
-func ComputeAssetID(name string, configPath string, ports []int, processPaths []string) string {
-	// Build a canonical string from all fingerprint components
-	var parts []string
-
+// the config path. Runtime-dynamic attributes (ports, process paths, pid, etc.) are
+// intentionally excluded so the ID stays stable regardless of whether the bot is
+// currently running. Same instance scanned at different times always produces the
+// same ID, which is required for protection/policy binding by asset_id.
+func ComputeAssetID(name string, configPath string) string {
 	nameLower := strings.ToLower(name)
-	parts = append(parts, "name="+nameLower)
 
+	parts := []string{"name=" + nameLower}
 	if configPath != "" {
 		parts = append(parts, "config="+configPath)
-	}
-
-	if len(ports) > 0 {
-		sortedPorts := make([]int, len(ports))
-		copy(sortedPorts, ports)
-		sort.Ints(sortedPorts)
-		portStrs := make([]string, len(sortedPorts))
-		for i, p := range sortedPorts {
-			portStrs[i] = fmt.Sprintf("%d", p)
-		}
-		parts = append(parts, "ports="+strings.Join(portStrs, ","))
-	}
-
-	if len(processPaths) > 0 {
-		sortedPaths := make([]string, len(processPaths))
-		copy(sortedPaths, processPaths)
-		sort.Strings(sortedPaths)
-		parts = append(parts, "paths="+strings.Join(sortedPaths, ","))
 	}
 
 	canonical := strings.Join(parts, "|")

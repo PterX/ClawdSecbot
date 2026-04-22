@@ -21,7 +21,7 @@ func TestRewriteStableAssetID_UsesConfigPathOnly(t *testing.T) {
 	if asset.ID == "" {
 		t.Fatal("expected non-empty stable asset id")
 	}
-	want := core.ComputeAssetID(hermesAssetName, "/Users/test/.hermes/config.yaml", nil, nil)
+	want := core.ComputeAssetID(hermesAssetName, "/Users/test/.hermes/config.yaml")
 	if asset.ID != want {
 		t.Fatalf("asset id mismatch: got=%s want=%s", asset.ID, want)
 	}
