@@ -602,6 +602,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get modelConfigTesting => 'Testing...';
 
   @override
+  String get modelConfigValidateConnection => 'Validate Connectivity';
+
+  @override
+  String get modelConfigTestSuccess => 'Connectivity validation succeeded';
+
+  @override
   String get modelConfigSaving => 'Saving...';
 
   @override
@@ -1887,7 +1893,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get exitRestoreConfirm => 'Restore and Exit';
 
   @override
-  String get exitWithoutRestoreConfirm => 'Exit Without Restoring';
+  String get exitRestoreExitOnly => 'Exit Only';
 
   @override
   String get exitRestoreInProgress =>

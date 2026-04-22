@@ -198,35 +198,40 @@ class PluginService {
     RiskInfo risk,
     Map<String, dynamic> formData,
   ) async {
-    final sourcePlugin = _normalizeSourcePlugin(risk.sourcePlugin);
-    if (sourcePlugin == null) {
+    final assetID = _resolveMitigationAssetID(risk);
+    if (assetID == null) {
       return {
         'success': false,
-        'error': 'source_plugin is required for mitigation routing',
+        'error': 'asset_id is required for mitigation routing',
       };
     }
+    final sourcePlugin = _resolveMitigationSourcePlugin(risk);
     final req = {
       'id': risk.id,
       'args': risk.args,
       'form_data': formData,
+      'asset_id': assetID,
       'source_plugin': sourcePlugin,
     };
     return _callOneArg('MitigateRiskFFI', jsonEncode(req));
   }
 
   RiskInfo _parseRisk(Map<String, dynamic> json) {
-    final sourcePlugin = _normalizeSourcePlugin(
-      json['source_plugin'] as String?,
-    );
+    final args = json['args'] != null
+        ? Map<String, Object>.from(json['args'])
+        : null;
+    final assetID = _resolveAssetID(json['asset_id'] as String?, args);
+    final sourcePlugin =
+        _normalizeSourcePlugin(json['source_plugin'] as String?) ??
+        _resolveSourcePluginFromArgs(args);
     return RiskInfo(
       id: json['id'] ?? 'unknown',
       title: json['title'] ?? 'Unknown Risk',
       description: json['description'] ?? '',
       level: _parseRiskLevel(json['level']),
       icon: _getIconForRisk(json['level']),
-      args: json['args'] != null
-          ? Map<String, Object>.from(json['args'])
-          : null,
+      args: args,
+      assetID: assetID,
       mitigation: json['mitigation'] != null
           ? Mitigation.fromJson(json['mitigation'])
           : null,
@@ -234,8 +239,41 @@ class PluginService {
     );
   }
 
+  String? _resolveMitigationAssetID(RiskInfo risk) {
+    return _normalizeAssetID(risk.assetID) ??
+        _resolveAssetIDFromArgs(risk.args);
+  }
+
+  String? _resolveMitigationSourcePlugin(RiskInfo risk) {
+    return _normalizeSourcePlugin(risk.sourcePlugin) ??
+        _resolveSourcePluginFromArgs(risk.args);
+  }
+
+  String? _resolveAssetID(String? assetID, Map<String, Object>? args) {
+    return _normalizeAssetID(assetID) ?? _resolveAssetIDFromArgs(args);
+  }
+
+  String? _resolveAssetIDFromArgs(Map<String, Object>? args) {
+    return _normalizeAssetID(args?['asset_id']?.toString());
+  }
+
+  String? _resolveSourcePluginFromArgs(Map<String, Object>? args) {
+    final fromArgs = args?['source_plugin'];
+    final normalized = fromArgs?.toString().trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    return normalized;
+  }
+
   String? _normalizeSourcePlugin(String? sourcePlugin) {
     final normalized = sourcePlugin?.trim();
+    if (normalized == null || normalized.isEmpty) return null;
+    return normalized;
+  }
+
+  String? _normalizeAssetID(String? assetID) {
+    final normalized = assetID?.trim();
     if (normalized == null || normalized.isEmpty) return null;
     return normalized;
   }

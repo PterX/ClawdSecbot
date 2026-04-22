@@ -10,6 +10,7 @@ import '../utils/app_logger.dart';
 /// Scan DB facade delegated to Go layer through transport.
 class ScanDatabaseService {
   static final ScanDatabaseService _instance = ScanDatabaseService._internal();
+  String? _lastLoadedScanSignature;
 
   factory ScanDatabaseService() => _instance;
 
@@ -60,6 +61,14 @@ class ScanDatabaseService {
       final risks = <RiskInfo>[];
       for (final r in (data['risks'] as List?) ?? const []) {
         final riskMap = r as Map<String, dynamic>;
+        final args = riskMap['args'] != null
+            ? Map<String, Object>.from(riskMap['args'])
+            : null;
+        final sourcePlugin = _resolveSourcePlugin(
+          riskMap['source_plugin'] as String?,
+          args,
+        );
+        final assetID = _resolveAssetID(riskMap['asset_id'] as String?, args);
         risks.add(
           RiskInfo(
             id: riskMap['id'] ?? 'unknown',
@@ -67,18 +76,19 @@ class ScanDatabaseService {
             description: riskMap['description'] ?? '',
             level: _parseRiskLevel(riskMap['level']),
             icon: _getIconForRisk(riskMap['level']),
-            args: riskMap['args'] != null
-                ? Map<String, Object>.from(riskMap['args'])
-                : null,
+            args: args,
+            assetID: assetID,
             mitigation: riskMap['mitigation'] != null
                 ? Mitigation.fromJson(riskMap['mitigation'])
                 : null,
+            sourcePlugin: sourcePlugin,
           ),
         );
       }
 
-      appLogger.info(
-        '[ScanDB] Loaded latest scan via Go layer: ${assets.length} assets, ${risks.length} risks',
+      _logLoadedLatestScanIfChanged(
+        assetCount: assets.length,
+        riskCount: risks.length,
       );
       return ScanResult(
         config: configJSON != null
@@ -88,12 +98,69 @@ class ScanDatabaseService {
         configFound: configFound,
         configPath: configPath,
         assets: assets,
-        scannedAt: scannedAtRaw != null ? DateTime.tryParse(scannedAtRaw) : null,
+        scannedAt: scannedAtRaw != null
+            ? DateTime.tryParse(scannedAtRaw)
+            : null,
       );
     } catch (e) {
       appLogger.error('[ScanDB] Failed to parse latest scan result', e);
       return null;
     }
+  }
+
+  String? _resolveSourcePlugin(
+    String? sourcePlugin,
+    Map<String, Object>? args,
+  ) {
+    final normalized = sourcePlugin?.trim();
+    if (normalized != null && normalized.isNotEmpty) {
+      return normalized;
+    }
+    final fromArgs = args?['source_plugin'];
+    final fallback = fromArgs?.toString().trim();
+    if (fallback == null || fallback.isEmpty) {
+      return null;
+    }
+    return fallback;
+  }
+
+  String? _resolveAssetID(String? assetID, Map<String, Object>? args) {
+    final normalized = assetID?.trim();
+    if (normalized != null && normalized.isNotEmpty) {
+      return normalized;
+    }
+    final fromArgs = args?['asset_id'];
+    final fallback = fromArgs?.toString().trim();
+    if (fallback == null || fallback.isEmpty) {
+      return null;
+    }
+    return fallback;
+  }
+
+  /// 仅在扫描结果发生变化时记录加载日志，避免重复日志占用磁盘空间。
+  void _logLoadedLatestScanIfChanged({
+    required int assetCount,
+    required int riskCount,
+  }) {
+    final signature = _buildLatestScanSignature(
+      assetCount: assetCount,
+      riskCount: riskCount,
+    );
+    if (_lastLoadedScanSignature == signature) {
+      return;
+    }
+    _lastLoadedScanSignature = signature;
+    appLogger.info(
+      '[ScanDB] Loaded latest scan via Go layer: $assetCount assets, $riskCount risks',
+    );
+  }
+
+  /// 构造最新扫描结果签名，用于判断数据是否变化。
+  String _buildLatestScanSignature({
+    required int assetCount,
+    required int riskCount,
+  }) {
+    return '$assetCount|$riskCount';
   }
 
   Future<Set<String>> getScannedSkillHashes() async {
@@ -138,7 +205,8 @@ class ScanDatabaseService {
       'skill_hash': data['skill_hash'],
       'scanned_at': data['scanned_at'],
       'safe': data['safe'] as bool? ?? false,
-      'issues': (data['issues'] as List?)?.map((e) => e.toString()).toList() ??
+      'issues':
+          (data['issues'] as List?)?.map((e) => e.toString()).toList() ??
           <String>[],
     };
   }
@@ -166,7 +234,8 @@ class ScanDatabaseService {
         'asset_id': data['asset_id'] ?? '',
         'scanned_at': data['scanned_at'],
         'safe': data['safe'] as bool? ?? false,
-        'issues': (data['issues'] as List?)?.map((e) => e.toString()).toList() ??
+        'issues':
+            (data['issues'] as List?)?.map((e) => e.toString()).toList() ??
             <String>[],
       };
     }).toList();
@@ -187,7 +256,8 @@ class ScanDatabaseService {
         'safe': data['safe'] as bool? ?? false,
         'risk_level': data['risk_level'] as String? ?? '',
         'trusted': data['trusted'] as bool? ?? false,
-        'issues': (data['issues'] as List?)?.map((e) => e.toString()).toList() ??
+        'issues':
+            (data['issues'] as List?)?.map((e) => e.toString()).toList() ??
             <String>[],
       };
     }).toList();
