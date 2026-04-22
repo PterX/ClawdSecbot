@@ -2044,6 +2044,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get eventOther => 'Other Event';
 
   @override
+  String get eventTypeWarning => 'Warning';
+
+  @override
+  String get riskTypeQuota => 'Quota Limited';
+
+  @override
+  String get riskTypeSandboxBlocked => 'Sandbox Blocked';
+
+  @override
+  String get riskTypeNeedsConfirmation => 'Needs Confirmation';
+
+  @override
   String get eventTime => 'Time';
 
   @override

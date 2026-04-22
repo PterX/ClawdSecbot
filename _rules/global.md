@@ -97,6 +97,7 @@
 - 监控/审计相关实现必须满足：并发可关联、链路可追溯、写入幂等、失败不阻断主业务。
 - 详细实现规范见独立文档：
   - [`_rules/audit_chain.md`](audit_chain.md)
+  - [`_rules/security_event.md`](security_event.md)
 
 ## 8. 沙箱规范
 

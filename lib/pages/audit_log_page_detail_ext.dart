@@ -262,6 +262,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
     final accent = blocked ? Colors.red : Colors.amber;
     final typeLabel = switch (evt.eventType) {
       'blocked' => 'BLOCKED',
+      'needs_confirmation' => 'NEEDS_CONFIRMATION',
       'tool_execution' => 'TOOL',
       _ => evt.eventType.toUpperCase(),
     };

@@ -1967,6 +1967,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get eventOther => '其他事件';
 
   @override
+  String get eventTypeWarning => '告警';
+
+  @override
+  String get riskTypeQuota => '配额限制';
+
+  @override
+  String get riskTypeSandboxBlocked => '沙箱拦截';
+
+  @override
+  String get riskTypeNeedsConfirmation => '待确认';
+
+  @override
   String get eventTime => '时间';
 
   @override

@@ -133,18 +133,8 @@ func restartOpenclawGateway(req *GatewayRestartRequest) (map[string]interface{},
 		}
 		time.Sleep(2 * time.Second)
 
-		sandbox.StartHookLogWatcherByKey(instanceKey, logPath, func(event sandbox.HookLogEvent) {
-			eventType, actionDesc, riskType, source := sandbox.MapHookEventToSecurityEvent(event)
-			GetSecurityEventBuffer().AddSecurityEvent(SecurityEvent{
-				EventType:  eventType,
-				ActionDesc: actionDesc,
-				RiskType:   riskType,
-				Source:     source,
-				Detail:     event.Detail,
-				AssetName:  req.AssetName,
-				AssetID:    req.AssetID,
-			})
-		})
+		// Sandbox hook audit log is no longer harvested into SecurityEvents here.
+		// Proxy decision sink is the sole authoritative source (see _rules/security_event.md).
 
 		return map[string]interface{}{
 			"success":          true,
@@ -156,8 +146,6 @@ func restartOpenclawGateway(req *GatewayRestartRequest) (map[string]interface{},
 	}
 
 	// normal mode: remove LD_PRELOAD if present
-	instanceKey := buildGatewayInstanceKey(req.AssetName, req.AssetID)
-	sandbox.StopHookLogWatcherByKey(instanceKey)
 	m, err := removeSandboxFromUnit(unitPath)
 	if err != nil {
 		logging.Warning("[GatewayManager] remove sandbox from unit failed: %v", err)
