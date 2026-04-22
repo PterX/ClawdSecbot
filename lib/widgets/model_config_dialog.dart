@@ -18,9 +18,10 @@ class _ModelConfigDialogState extends State<ModelConfigDialog> {
   final GlobalKey<SecurityModelConfigFormState> _formKey =
       GlobalKey<SecurityModelConfigFormState>();
   bool _saving = false;
+  bool _validating = false;
 
   Future<void> _handleSave() async {
-    if (_saving) return;
+    if (_saving || _validating) return;
     setState(() {
       _saving = true;
     });
@@ -40,13 +41,26 @@ class _ModelConfigDialogState extends State<ModelConfigDialog> {
   }
 
   /// 处理手动验证连通性动作。
+  /// 以 [_validating] 驱动按钮内转圈动画，表单层负责在切换 provider /
+  /// 关闭弹窗时让此 Future 提前返回，避免 loading 态长时间残留。
   Future<void> _handleValidateConnection() async {
-    if (_saving) return;
-    await _formKey.currentState?.validateConnection();
+    if (_saving || _validating) return;
+    setState(() {
+      _validating = true;
+    });
+    try {
+      await _formKey.currentState?.validateConnection();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _validating = false;
+        });
+      }
+    }
   }
 
   void _handleCancel() {
-    if (_saving) return;
+    if (_saving || _validating) return;
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
@@ -97,7 +111,7 @@ class _ModelConfigDialogState extends State<ModelConfigDialog> {
                     color: Colors.white54,
                     size: 20,
                   ),
-                  onPressed: _saving ? null : _handleCancel,
+                  onPressed: (_saving || _validating) ? null : _handleCancel,
                 ),
               ],
             ),
@@ -110,37 +124,66 @@ class _ModelConfigDialogState extends State<ModelConfigDialog> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
-                  onPressed: _saving ? null : _handleCancel,
+                  onPressed: (_saving || _validating) ? null : _handleCancel,
                   child: Text(
                     l10n.cancel,
                     style: AppFonts.inter(
                       fontSize: 14,
-                      color: _saving ? Colors.white24 : Colors.white54,
+                      color: (_saving || _validating)
+                          ? Colors.white24
+                          : Colors.white54,
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 OutlinedButton(
-                  onPressed: _saving ? null : _handleValidateConnection,
+                  onPressed: (_saving || _validating)
+                      ? null
+                      : _handleValidateConnection,
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-                    foregroundColor: _saving ? Colors.white24 : Colors.white70,
+                    foregroundColor: (_saving || _validating)
+                        ? Colors.white24
+                        : Colors.white70,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 12,
                     ),
                   ),
-                  child: Text(
-                    l10n.modelConfigValidateConnection,
-                    style: AppFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+                  child: _validating
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white70,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              l10n.modelConfigTesting,
+                              style: AppFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Text(
+                          l10n.modelConfigValidateConnection,
+                          style: AppFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton(
-                  onPressed: _saving ? null : _handleSave,
+                  onPressed: (_saving || _validating) ? null : _handleSave,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF6366F1),
                     foregroundColor: Colors.white,

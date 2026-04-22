@@ -40,6 +40,15 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
   bool _testing = false;
   String? _error;
 
+  /// 连通性测试版本号：每次发起测试自增，切换 provider / 关闭表单 /
+  /// 发起新测试时自增即可使在途请求的结果被丢弃，实现 UI 侧"取消"。
+  int _testSeq = 0;
+
+  /// 当前在途的连通性测试 completer。切换 provider / 关闭表单 / 重新发起测试
+  /// 时以 null 完成它，让 [validateConnection] 的 Future 立即 resolve，
+  /// 外层按钮的 loading 态可以即时清除（不必等 Go 侧最长 30s 的超时）。
+  Completer<Map<String, dynamic>?>? _activeTestCompleter;
+
   final TextEditingController _endpointController = TextEditingController();
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _modelController = TextEditingController();
@@ -299,6 +308,9 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
   }
 
   /// 手动验证当前配置连通性，不执行保存。
+  /// 使用 [_testSeq] + [_activeTestCompleter] 做 UI 侧取消：
+  /// 切换 provider、关闭弹窗、再次点击测试按钮时，前一次请求会被标记为已取消，
+  /// 其 Future 立刻以 false 返回，外层按钮 loading 态可以即时清除。
   Future<bool> validateConnection() async {
     final l10n = AppLocalizations.of(context)!;
     final config = _buildCurrentConfig();
@@ -309,41 +321,59 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
       return false;
     }
 
+    // 若此前仍有在途测试，以 null 完成其 completer，让对应 Future 立即返回。
+    final previous = _activeTestCompleter;
+    if (previous != null && !previous.isCompleted) {
+      previous.complete(null);
+    }
+
+    final int seq = ++_testSeq;
+    final completer = Completer<Map<String, dynamic>?>();
+    _activeTestCompleter = completer;
+
     setState(() {
       _testing = true;
       _error = null;
     });
-    try {
-      final testResult = await _service.testConnection(config);
-      if (testResult['success'] == true) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(l10n.modelConfigTestSuccess),
-              backgroundColor: Colors.green,
-            ),
-          );
+
+    unawaited(
+      _service.testConnection(config).then((result) {
+        if (!completer.isCompleted) {
+          completer.complete(result);
         }
-        return true;
-      }
-      setState(() {
-        _error = l10n.modelConfigTestFailed(
-          testResult['error'] ?? 'Unknown error',
-        );
-      });
-      return false;
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-      });
-      return false;
-    } finally {
-      if (mounted) {
-        setState(() {
-          _testing = false;
-        });
-      }
+      }).catchError((Object e) {
+        if (!completer.isCompleted) {
+          completer.complete({'success': false, 'error': e.toString()});
+        }
+      }),
+    );
+
+    final result = await completer.future;
+    if (identical(_activeTestCompleter, completer)) {
+      _activeTestCompleter = null;
     }
+
+    if (!mounted || seq != _testSeq || result == null) {
+      return false;
+    }
+
+    if (result['success'] == true) {
+      setState(() {
+        _testing = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.modelConfigTestSuccess),
+          backgroundColor: Colors.green,
+        ),
+      );
+      return true;
+    }
+    setState(() {
+      _error = l10n.modelConfigTestFailed(result['error'] ?? 'Unknown error');
+      _testing = false;
+    });
+    return false;
   }
 
   /// 执行 Bot 重启动作并显示用户友好的页面提示。
@@ -409,7 +439,14 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
 
   /// 切换 provider 时只在内存中缓存当前草稿并恢复目标 provider 的内存草稿。
   /// 不执行任何磁盘/FFI 持久化，避免阻塞主线程导致 Windows 界面未响应。
+  /// 同步作废可能在途的连通性测试结果，并立即停止 loading 指示。
   void _handleProviderSelected(ProviderInfo provider) {
+    _testSeq++;
+    final pending = _activeTestCompleter;
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(null);
+    }
+    _activeTestCompleter = null;
     _captureCurrentProviderDraft();
     final targetConfig =
         _providerDrafts[provider.name] ?? _createEmptyConfig(provider.name);
@@ -418,6 +455,7 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
       _selectedType = provider.name;
       _applyConfigToControllers(targetConfig);
       _error = null;
+      _testing = false;
     });
   }
 
@@ -443,6 +481,11 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
 
   @override
   void dispose() {
+    final pending = _activeTestCompleter;
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(null);
+    }
+    _activeTestCompleter = null;
     _endpointController.dispose();
     _apiKeyController.dispose();
     _modelController.dispose();

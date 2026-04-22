@@ -1,4 +1,5 @@
 import 'dart:ffi' as ffi;
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 
@@ -25,6 +26,9 @@ typedef _OneArgOneIntDart = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, int);
 
 typedef _ThreeIntC = ffi.Pointer<Utf8> Function(ffi.Int32, ffi.Int32, ffi.Int32);
 typedef _ThreeIntDart = ffi.Pointer<Utf8> Function(int, int, int);
+
+typedef _FreeStrC = ffi.Void Function(ffi.Pointer<Utf8>);
+typedef _FreeStrDart = void Function(ffi.Pointer<Utf8>);
 
 class FfiTransport extends BotsecTransport {
   FfiTransport._();
@@ -76,6 +80,29 @@ class FfiTransport extends BotsecTransport {
       if (argPtr != null) {
         malloc.free(argPtr);
       }
+    }
+  }
+
+  /// 在后台 isolate 执行同步 FFI 调用，保持 UI isolate 空闲。
+  /// 适用于一次性的长耗时调用（如 LLM 连通性测试）。
+  @override
+  Future<String> callRawOneArgAsync(String method, String arg) async {
+    if (!isReady) {
+      return _notReadyJson();
+    }
+    final libPath = NativeLibraryService().libraryPath;
+    if (libPath == null || libPath.isEmpty) {
+      return callRawOneArg(method, arg);
+    }
+    final payload = _FfiOneArgPayload(libPath, method, arg);
+    try {
+      return await Isolate.run<String>(
+        () => _invokeFfiOneArgInIsolate(payload),
+        debugName: 'ffi-$method',
+      );
+    } catch (e) {
+      appLogger.error('[Transport][FFI-Async] $method failed: $e');
+      return _errorJson(method, e);
     }
   }
 
@@ -177,5 +204,38 @@ class FfiTransport extends BotsecTransport {
   String _errorJson(String method, Object e) {
     final escaped = e.toString().replaceAll('"', '\\"');
     return '{"success":false,"error":"$method failed: $escaped"}';
+  }
+}
+
+/// Parameters passed into the background isolate for a one-arg FFI call.
+/// Keeps the isolate entry self-contained (no capture of FfiTransport state).
+class _FfiOneArgPayload {
+  const _FfiOneArgPayload(this.libPath, this.method, this.arg);
+
+  final String libPath;
+  final String method;
+  final String arg;
+}
+
+/// Top-level isolate entry: re-opens the dylib in the worker isolate and
+/// performs a single FFI call. Allocating and freeing native memory happen in
+/// the same isolate, so no cross-isolate pointer ownership is involved.
+/// The underlying OS library is already loaded in the process; DynamicLibrary
+/// .open just increments its reference count.
+String _invokeFfiOneArgInIsolate(_FfiOneArgPayload p) {
+  ffi.Pointer<Utf8>? argPtr;
+  try {
+    final lib = ffi.DynamicLibrary.open(p.libPath);
+    final fn = lib.lookupFunction<_OneArgC, _OneArgDart>(p.method);
+    final freeStr = lib.lookupFunction<_FreeStrC, _FreeStrDart>('FreeString');
+    argPtr = p.arg.toNativeUtf8();
+    final resultPtr = fn(argPtr);
+    final result = resultPtr.toDartString();
+    freeStr(resultPtr);
+    return result;
+  } finally {
+    if (argPtr != null) {
+      malloc.free(argPtr);
+    }
   }
 }

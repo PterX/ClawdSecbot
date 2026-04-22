@@ -201,6 +201,8 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
 
   // 防止重复点击保存
   bool _isSaving = false;
+  // Bot 模型连通性测试态，驱动 footer 验证按钮的转圈动画并屏蔽保存/取消。
+  bool _isValidatingBotModel = false;
   String _savingProgressMessage = _defaultSavingMessage;
 
   // Shepherd User Rules
@@ -442,6 +444,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
       barrierDismissible: false,
       builder: (dialogContext) {
         bool reuseBotConfig = botConfig != null;
+        bool validating = false;
         final formKey = GlobalKey<SecurityModelConfigFormState>();
         return StatefulBuilder(
           builder: (context, setState) => AlertDialog(
@@ -521,68 +524,102 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
               ),
               const SizedBox(width: 8),
               OutlinedButton(
-                onPressed: reuseBotConfig
+                onPressed: (reuseBotConfig || validating)
                     ? null
                     : () async {
-                        await formKey.currentState?.validateConnection();
+                        setState(() => validating = true);
+                        try {
+                          await formKey.currentState?.validateConnection();
+                        } finally {
+                          if (dialogContext.mounted) {
+                            setState(() => validating = false);
+                          }
+                        }
                       },
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
                   foregroundColor: Colors.white70,
                 ),
-                child: Text(
-                  AppLocalizations.of(
-                    dialogContext,
-                  )!.modelConfigValidateConnection,
-                  style: AppFonts.inter(color: Colors.white70),
-                ),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  SecurityModelConfig? savedConfig;
-                  bool success = false;
-                  if (reuseBotConfig && botConfig != null) {
-                    savedConfig = _toSecurityModelConfig(botConfig);
-                    success = await SecurityModelConfigService().saveConfig(
-                      savedConfig,
-                    );
-                    if (success) {
-                      try {
-                        final protectionService = ProtectionService.forAsset(
-                          widget.assetName,
-                          _config.assetID,
-                        );
-                        await protectionService.updateSecurityModelConfig(
-                          savedConfig,
-                        );
-                      } catch (_) {}
-                    }
-                  } else {
-                    success =
-                        await (formKey.currentState?.saveConfig() ?? false);
-                    if (success) {
-                      savedConfig = await ModelConfigDatabaseService()
-                          .getSecurityModelConfig();
-                    }
-                  }
-
-                  if (!dialogContext.mounted) return;
-                  if (success && savedConfig != null) {
-                    Navigator.of(dialogContext).pop(savedConfig);
-                    return;
-                  }
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    SnackBar(
-                      content: Text(
+                child: validating
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            AppLocalizations.of(
+                              dialogContext,
+                            )!.modelConfigTesting,
+                            style: AppFonts.inter(color: Colors.white70),
+                          ),
+                        ],
+                      )
+                    : Text(
                         AppLocalizations.of(
                           dialogContext,
-                        )!.modelConfigSaveFailed,
+                        )!.modelConfigValidateConnection,
+                        style: AppFonts.inter(color: Colors.white70),
                       ),
-                    ),
-                  );
-                },
+              ),
+              ElevatedButton(
+                onPressed: validating
+                    ? null
+                    : () async {
+                        SecurityModelConfig? savedConfig;
+                        bool success = false;
+                        if (reuseBotConfig && botConfig != null) {
+                          savedConfig = _toSecurityModelConfig(botConfig);
+                          success = await SecurityModelConfigService()
+                              .saveConfig(savedConfig);
+                          if (success) {
+                            try {
+                              final protectionService =
+                                  ProtectionService.forAsset(
+                                    widget.assetName,
+                                    _config.assetID,
+                                  );
+                              await protectionService.updateSecurityModelConfig(
+                                savedConfig,
+                              );
+                            } catch (_) {}
+                          }
+                        } else {
+                          success =
+                              await (formKey.currentState?.saveConfig() ??
+                                  false);
+                          if (success) {
+                            savedConfig = await ModelConfigDatabaseService()
+                                .getSecurityModelConfig();
+                          }
+                        }
+
+                        if (!dialogContext.mounted) return;
+                        if (success && savedConfig != null) {
+                          Navigator.of(dialogContext).pop(savedConfig);
+                          return;
+                        }
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              AppLocalizations.of(
+                                dialogContext,
+                              )!.modelConfigSaveFailed,
+                            ),
+                          ),
+                        );
+                      },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6366F1),
+                  disabledBackgroundColor: const Color(
+                    0xFF6366F1,
+                  ).withValues(alpha: 0.5),
                 ),
                 child: Text(
                   AppLocalizations.of(dialogContext)!.modelConfigSave,
@@ -2376,46 +2413,84 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
     }
   }
 
+  /// Bot 模型连通性测试，以 [_isValidatingBotModel] 驱动 footer 按钮转圈动画。
+  /// 表单层负责在切换 provider / 关闭弹窗时让此 Future 提前返回，
+  /// 避免 loading 态长时间残留。
+  Future<void> _handleValidateBotModelConnection() async {
+    if (_isSaving || _isValidatingBotModel) return;
+    setState(() {
+      _isValidatingBotModel = true;
+    });
+    try {
+      await _botModelFormKey.currentState?.validateConnection();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isValidatingBotModel = false;
+        });
+      }
+    }
+  }
+
   Widget _buildFooter(AppLocalizations l10n) {
     final bool isBotTabSelected =
         _requiresBotModelConfig && _tabController.index == (_botTabIndex ?? -1);
+    final bool busy = _isSaving || _isValidatingBotModel;
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         TextButton(
-          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+          onPressed: busy ? null : () => Navigator.of(context).pop(),
           child: Text(
             l10n.cancel,
             style: AppFonts.inter(
-              color: _isSaving ? Colors.white24 : Colors.white54,
+              color: busy ? Colors.white24 : Colors.white54,
             ),
           ),
         ),
         const SizedBox(width: 12),
         if (isBotTabSelected) ...[
           OutlinedButton(
-            onPressed: _isSaving
-                ? null
-                : () async {
-                    await _botModelFormKey.currentState?.validateConnection();
-                  },
+            onPressed: busy ? null : _handleValidateBotModelConnection,
             style: OutlinedButton.styleFrom(
               side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-              foregroundColor: _isSaving ? Colors.white24 : Colors.white70,
+              foregroundColor: busy ? Colors.white24 : Colors.white70,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
-            child: Text(
-              l10n.modelConfigValidateConnection,
-              style: AppFonts.inter(
-                fontWeight: FontWeight.w500,
-                color: _isSaving ? Colors.white24 : Colors.white70,
-              ),
-            ),
+            child: _isValidatingBotModel
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        l10n.modelConfigTesting,
+                        style: AppFonts.inter(
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    l10n.modelConfigValidateConnection,
+                    style: AppFonts.inter(
+                      fontWeight: FontWeight.w500,
+                      color: busy ? Colors.white24 : Colors.white70,
+                    ),
+                  ),
           ),
           const SizedBox(width: 12),
         ],
         ElevatedButton(
-          onPressed: _isSaving ? null : _saveConfig,
+          onPressed: busy ? null : _saveConfig,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF6366F1),
             disabledBackgroundColor: const Color(

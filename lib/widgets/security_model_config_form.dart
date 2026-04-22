@@ -49,6 +49,15 @@ class SecurityModelConfigFormState extends State<SecurityModelConfigForm> {
   bool _testing = false;
   String? _error;
 
+  /// 连通性测试版本号：每次发起测试自增，切换 provider / 关闭表单 /
+  /// 发起新测试时自增即可使在途请求的结果被丢弃，实现 UI 侧"取消"。
+  int _testSeq = 0;
+
+  /// 当前在途的连通性测试 completer。切换 provider / 关闭表单 / 重新发起测试
+  /// 时以 null 完成它，让 [validateConnection] 的 Future 立即 resolve，
+  /// 外层按钮的 loading 态可以即时清除（不必等 Go 侧最长 30s 的超时）。
+  Completer<Map<String, dynamic>?>? _activeTestCompleter;
+
   final TextEditingController _endpointController = TextEditingController();
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _modelController = TextEditingController();
@@ -221,6 +230,9 @@ class SecurityModelConfigFormState extends State<SecurityModelConfigForm> {
   }
 
   /// 手动验证当前配置连通性，不触发持久化。
+  /// 使用 [_testSeq] + [_activeTestCompleter] 做 UI 侧取消：
+  /// 切换 provider、关闭弹窗、再次点击测试按钮时，前一次请求会被标记为已取消，
+  /// 其 Future 立刻以 false 返回，外层按钮 loading 态可以即时清除。
   Future<bool> validateConnection() async {
     final l10n = AppLocalizations.of(context)!;
     final config = _buildCurrentConfig();
@@ -231,42 +243,62 @@ class SecurityModelConfigFormState extends State<SecurityModelConfigForm> {
       return false;
     }
 
+    // 若此前仍有在途测试，以 null 完成其 completer，让对应 Future 立即返回。
+    final previous = _activeTestCompleter;
+    if (previous != null && !previous.isCompleted) {
+      previous.complete(null);
+    }
+
+    final int seq = ++_testSeq;
+    final completer = Completer<Map<String, dynamic>?>();
+    _activeTestCompleter = completer;
+
     setState(() {
       _testing = true;
       _error = null;
     });
-    try {
-      final testResult = await _service.testConnection(config);
-      if (testResult['success'] == true) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(l10n.modelConfigTestSuccess),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-        return true;
-      }
 
-      setState(() {
-        _error = l10n.modelConfigTestFailed(
-          testResult['error'] ?? 'Unknown error',
-        );
-      });
-      return false;
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-      });
-      return false;
-    } finally {
-      if (mounted) {
-        setState(() {
-          _testing = false;
-        });
-      }
+    // 后台 isolate 的真实 FFI 调用；完成后回填 completer，若已被取消则忽略。
+    unawaited(
+      _service.testConnection(config).then((result) {
+        if (!completer.isCompleted) {
+          completer.complete(result);
+        }
+      }).catchError((Object e) {
+        if (!completer.isCompleted) {
+          completer.complete({'success': false, 'error': e.toString()});
+        }
+      }),
+    );
+
+    final result = await completer.future;
+    if (identical(_activeTestCompleter, completer)) {
+      _activeTestCompleter = null;
     }
+
+    // Widget 已销毁、被新序列号取代或被主动取消时，直接丢弃结果。
+    if (!mounted || seq != _testSeq || result == null) {
+      return false;
+    }
+
+    if (result['success'] == true) {
+      setState(() {
+        _testing = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.modelConfigTestSuccess),
+          backgroundColor: Colors.green,
+        ),
+      );
+      return true;
+    }
+
+    setState(() {
+      _error = l10n.modelConfigTestFailed(result['error'] ?? 'Unknown error');
+      _testing = false;
+    });
+    return false;
   }
 
   /// 构建当前表单配置对象。
@@ -326,7 +358,14 @@ class SecurityModelConfigFormState extends State<SecurityModelConfigForm> {
   }
 
   /// 切换 provider 时加载其对应草稿，避免输入被清空。
+  /// 同步作废可能在途的连通性测试结果，并立即停止 loading 指示。
   Future<void> _handleProviderSelected(ProviderInfo provider) async {
+    _testSeq++;
+    final pending = _activeTestCompleter;
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(null);
+    }
+    _activeTestCompleter = null;
     _captureCurrentProviderDraft();
     final targetConfig =
         _providerDrafts[provider.name] ?? _createEmptyConfig(provider.name);
@@ -335,6 +374,7 @@ class SecurityModelConfigFormState extends State<SecurityModelConfigForm> {
       _selectedType = provider.name;
       _applyConfigToControllers(targetConfig);
       _error = null;
+      _testing = false;
     });
     await _persistProviderDrafts();
   }
@@ -400,6 +440,12 @@ class SecurityModelConfigFormState extends State<SecurityModelConfigForm> {
 
   @override
   void dispose() {
+    // Let any in-flight validateConnection future resolve immediately.
+    final pending = _activeTestCompleter;
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(null);
+    }
+    _activeTestCompleter = null;
     _endpointController.dispose();
     _apiKeyController.dispose();
     _modelController.dispose();
