@@ -5,13 +5,11 @@ package main
 
 // DartCallback Dart 消息回调函数类型
 typedef void (*DartCallback)(const char* message);
-// AppShutdownCallback API shutdown 回调函数类型
-typedef void (*AppShutdownCallback)(const char* payload);
+typedef void (*DartAppShutdownCallback)(const char* message);
 
 // 存储 Dart 回调指针
 static DartCallback dartCallback = NULL;
-// 存储 API shutdown 回调指针
-static AppShutdownCallback appShutdownCallback = NULL;
+static DartAppShutdownCallback dartAppShutdownCallback = NULL;
 
 // setDartCallback 设置 Dart 回调
 static inline void setDartCallback(DartCallback cb) {
@@ -21,6 +19,14 @@ static inline void setDartCallback(DartCallback cb) {
 // clearDartCallback 清除 Dart 回调
 static inline void clearDartCallback() {
     dartCallback = NULL;
+}
+
+static inline void setDartAppShutdownCallback(DartAppShutdownCallback cb) {
+    dartAppShutdownCallback = cb;
+}
+
+static inline void clearDartAppShutdownCallback() {
+    dartAppShutdownCallback = NULL;
 }
 
 // isDartCallbackSet 检查回调是否已设置
@@ -35,25 +41,9 @@ static inline void invokeDartCallback(const char* msg) {
     }
 }
 
-// setAppShutdownCallback 设置 API shutdown 回调
-static inline void setAppShutdownCallback(AppShutdownCallback cb) {
-    appShutdownCallback = cb;
-}
-
-// clearAppShutdownCallback 清除 API shutdown 回调
-static inline void clearAppShutdownCallback() {
-    appShutdownCallback = NULL;
-}
-
-// isAppShutdownCallbackSet 检查 API shutdown 回调是否已设置
-static inline int isAppShutdownCallbackSet() {
-    return appShutdownCallback != NULL ? 1 : 0;
-}
-
-// invokeAppShutdownCallback 调用 API shutdown 回调
-static inline void invokeAppShutdownCallback(const char* payload) {
-    if (appShutdownCallback != NULL) {
-        appShutdownCallback(payload);
+static inline void invokeDartAppShutdownCallback(const char* msg) {
+    if (dartAppShutdownCallback != NULL) {
+        dartAppShutdownCallback(msg);
     }
 }
 */
@@ -80,15 +70,15 @@ import (
 	"go_lib/core/shepherd"
 
 	// Import all plugins to trigger init() registration
-	dintalclaw "go_lib/plugins/dintalclaw"
-	hermes "go_lib/plugins/hermes"
-	nullclaw "go_lib/plugins/nullclaw"
-	openclaw "go_lib/plugins/openclaw"
+	_ "go_lib/plugins/dintalclaw"
+	_ "go_lib/plugins/nullclaw"
+	_ "go_lib/plugins/openclaw"
 )
 
 func init() {
 	resetSignals()
 	startPprofIfNeeded()
+	configureRealtimeExportHooks()
 }
 
 func startPprofIfNeeded() {
@@ -155,25 +145,6 @@ func resolveSandboxAssetIdentity(assetName, assetID string) (assetKey string, di
 	return assetKey, displayName, nil
 }
 
-//export SetConfigPathFFI
-func SetConfigPathFFI(pathC *C.char) *C.char {
-	path := C.GoString(pathC)
-	openclaw.SetConfigPath(path)
-	nullclaw.SetConfigPath(path)
-	dintalclaw.SetConfigPath(path)
-	hermes.SetConfigPath(path)
-	return jsonToCString(map[string]interface{}{"success": true, "path": path})
-}
-
-//export SetAppStoreBuildFFI
-func SetAppStoreBuildFFI(isAppStore C.int) *C.char {
-	value := isAppStore != 0
-	openclaw.SetAppStoreBuild(value)
-	nullclaw.SetAppStoreBuild(value)
-	hermes.SetAppStoreBuild(value)
-	return jsonToCString(map[string]interface{}{"success": true, "is_app_store": value})
-}
-
 // ==================== 全局初始化 FFI ====================
 
 //export InitPathsFFI
@@ -181,9 +152,30 @@ func InitPathsFFI(workspaceDirC, homeDirC *C.char) *C.char {
 	workspaceDir := C.GoString(workspaceDirC)
 	homeDir := C.GoString(homeDirC)
 
-	result, err := core.Initialize(workspaceDir, homeDir)
+	result, err := core.Initialize(workspaceDir, homeDir, "")
 	if err != nil {
 		return errorCString(err)
+	}
+	pm := core.GetPathManager()
+	if pm.IsInitialized() {
+		sandbox.SetDefaultPolicyDir(pm.GetPolicyDir())
+	}
+	return jsonToCString(result)
+}
+
+//export InitPathsWithConfigFFI
+func InitPathsWithConfigFFI(workspaceDirC, homeDirC, sandboxDirC *C.char) *C.char {
+	workspaceDir := C.GoString(workspaceDirC)
+	homeDir := C.GoString(homeDirC)
+	sandboxDir := C.GoString(sandboxDirC)
+
+	result, err := core.Initialize(workspaceDir, homeDir, sandboxDir)
+	if err != nil {
+		return errorCString(err)
+	}
+	pm := core.GetPathManager()
+	if pm.IsInitialized() {
+		sandbox.SetDefaultPolicyDir(pm.GetPolicyDir())
 	}
 	return jsonToCString(result)
 }
@@ -307,8 +299,8 @@ func GetSkillScanByHash(hashC *C.char) *C.char {
 }
 
 //export DeleteSkillScanFFI
-func DeleteSkillScanFFI(skillNameC *C.char) *C.char {
-	return jsonToCString(service.DeleteSkillScan(C.GoString(skillNameC)))
+func DeleteSkillScanFFI(skillHashC *C.char) *C.char {
+	return jsonToCString(service.DeleteSkillScan(C.GoString(skillHashC)))
 }
 
 //export GetRiskySkills
@@ -317,8 +309,8 @@ func GetRiskySkills() *C.char {
 }
 
 //export TrustSkillScan
-func TrustSkillScan(skillNameC *C.char) *C.char {
-	return jsonToCString(service.TrustSkill(C.GoString(skillNameC)))
+func TrustSkillScan(skillHashC *C.char) *C.char {
+	return jsonToCString(service.TrustSkill(C.GoString(skillHashC)))
 }
 
 //export GetAllSkillScansFFI
@@ -682,29 +674,30 @@ func StartSandboxedGateway(configJSON *C.char) *C.char {
 }
 
 //export StopSandboxedGateway
-func StopSandboxedGateway(assetID *C.char) *C.char {
-	key := strings.TrimSpace(C.GoString(assetID))
-	if key == "" {
+func StopSandboxedGateway(assetName *C.char) *C.char {
+	assetKey := strings.TrimSpace(C.GoString(assetName))
+	if assetKey == "" {
 		return errorCString(fmt.Errorf("asset_id is required"))
 	}
-	if sandbox.GetExistingSandboxManagerByKey(key) == nil {
+	manager := sandbox.GetExistingSandboxManagerByKey(assetKey)
+	if manager == nil {
 		return C.CString(`{"success": true, "message": "no sandbox manager found"}`)
 	}
 
-	sandbox.RemoveProcessMonitorByKey(key)
-	sandbox.RemoveSandboxManagerByKey(key)
+	sandbox.RemoveProcessMonitorByKey(assetKey)
+	sandbox.RemoveSandboxManagerByKey(assetKey)
 	return C.CString(`{"success": true}`)
 }
 
 //export GetSandboxStatus
-func GetSandboxStatus(assetID *C.char) *C.char {
-	key := strings.TrimSpace(C.GoString(assetID))
-	if key == "" {
+func GetSandboxStatus(assetName *C.char) *C.char {
+	assetKey := strings.TrimSpace(C.GoString(assetName))
+	if assetKey == "" {
 		return errorCString(fmt.Errorf("asset_id is required"))
 	}
-	manager := sandbox.GetExistingSandboxManagerByKey(key)
+	manager := sandbox.GetExistingSandboxManagerByKey(assetKey)
 	if manager == nil {
-		return errorCString(fmt.Errorf("sandbox manager not found for asset_id: %s", key))
+		return errorCString(fmt.Errorf("sandbox manager not found for asset_id: %s", assetKey))
 	}
 	status := manager.GetStatus()
 	return jsonToCString(status)
@@ -746,12 +739,12 @@ func EnableProcessMonitor(configJSON *C.char) *C.char {
 }
 
 //export DisableProcessMonitor
-func DisableProcessMonitor(assetID *C.char) *C.char {
-	key := strings.TrimSpace(C.GoString(assetID))
-	if key == "" {
+func DisableProcessMonitor(assetName *C.char) *C.char {
+	assetKey := strings.TrimSpace(C.GoString(assetName))
+	if assetKey == "" {
 		return errorCString(fmt.Errorf("asset_id is required"))
 	}
-	sandbox.RemoveProcessMonitorByKey(key)
+	sandbox.RemoveProcessMonitorByKey(assetKey)
 	return C.CString(`{"success": true}`)
 }
 
@@ -847,41 +840,121 @@ var (
 	callbackActive   bool
 )
 
-// API 服务全局实例
-var (
-	apiServer   *api.APIServer
-	apiServerMu sync.Mutex
-)
-
-// API shutdown 回调桥接
-var appShutdownCallbackMu sync.Mutex
-
-func emitAppShutdownRequest(options api.AppShutdownOptions) error {
-	appShutdownCallbackMu.Lock()
-	defer appShutdownCallbackMu.Unlock()
-
-	if C.isAppShutdownCallbackSet() == 0 {
-		return fmt.Errorf("app shutdown callback is not registered")
-	}
-
-	payload, err := json.Marshal(map[string]interface{}{
-		"restoreConfig": options.RestoreConfig,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal shutdown payload failed: %w", err)
-	}
-
-	// 内存由 Dart 在回调处理后通过 FreeString 释放。
-	cPayload := C.CString(string(payload))
-	C.invokeAppShutdownCallback(cPayload)
-	return nil
-}
-
 // 版本检查服务全局实例
 var (
 	versionCheckService   *service.VersionCheckService
 	versionCheckServiceMu sync.Mutex
 )
+
+// API Server 全局实例
+var (
+	apiServer     *api.APIServer
+	apiServerLock sync.Mutex
+)
+
+var (
+	appShutdownCallbackMu sync.Mutex
+	appShutdownCallbackOn bool
+)
+
+func configureRealtimeExportHooks() {
+	proxy.SetCompletedTruthRecordCallback(func(record proxy.TruthRecord) {
+		appendTruthRecordAuditToExport(record)
+	})
+
+	shepherd.GetSecurityEventBuffer().SetExportCallback(func(event shepherd.SecurityEvent) {
+		appendSecurityEventToExport(event)
+	})
+}
+
+func appendTruthRecordAuditToExport(record proxy.TruthRecord) {
+	apiServerLock.Lock()
+	server := apiServer
+	apiServerLock.Unlock()
+	if server == nil {
+		return
+	}
+	// 使用当前审计链路的完成态 TruthRecord 快照直接导出，避免依赖已移除的增量转换函数。
+
+	toolCalls := make([]api.ToolCall, 0, len(record.ToolCalls))
+	for _, tc := range record.ToolCalls {
+		toolCalls = append(toolCalls, api.ToolCall{
+			Tool:       tc.Name,
+			Parameters: tc.Arguments,
+			Result:     tc.Result,
+		})
+	}
+
+	action := "ALLOW"
+	riskLevel := ""
+	riskReason := ""
+	if record.Decision != nil {
+		action = record.Decision.Action
+		riskLevel = record.Decision.RiskLevel
+		riskReason = record.Decision.Reason
+	}
+
+	requestContent := ""
+	for _, msg := range record.Messages {
+		if msg.Role == "user" {
+			requestContent = msg.Content
+			break
+		}
+	}
+
+	durationMs := 0
+	if record.StartedAt != "" && record.CompletedAt != "" {
+		if startedAt, err := time.Parse(time.RFC3339Nano, record.StartedAt); err == nil {
+			if completedAt, err := time.Parse(time.RFC3339Nano, record.CompletedAt); err == nil {
+				durationMs = int(completedAt.Sub(startedAt).Milliseconds())
+			}
+		}
+	}
+
+	entry := &api.AuditLogEntry{
+		BotID:         record.AssetID,
+		LogID:         record.RequestID,
+		LogTimestamp:  record.StartedAt,
+		RequestID:     record.RequestID,
+		Model:         record.Model,
+		Action:        action,
+		RiskLevel:     riskLevel,
+		RiskCauses:    riskReason,
+		DurationMs:    durationMs,
+		TokenCount:    record.PromptTokens + record.CompletionTokens,
+		UserRequest:   requestContent,
+		ToolCallCount: len(record.ToolCalls),
+		ToolCalls:     toolCalls,
+	}
+
+	if err := server.AppendAuditLog(entry); err != nil {
+		fmt.Fprintf(os.Stderr, "[export] append audit log failed: %v\n", err)
+	}
+}
+
+func appendSecurityEventToExport(event shepherd.SecurityEvent) {
+	apiServerLock.Lock()
+	server := apiServer
+	apiServerLock.Unlock()
+	if server == nil {
+		return
+	}
+
+	entry := &api.SecurityEventEntry{
+		BotID:      event.BotID,
+		EventID:    event.ID,
+		Timestamp:  event.Timestamp,
+		EventType:  event.EventType,
+		ActionDesc: event.ActionDesc,
+		RiskType:   event.RiskType,
+		Detail:     event.Detail,
+		Source:     event.Source,
+	}
+
+	if err := server.AppendSecurityEvent(entry); err != nil {
+		fmt.Fprintf(os.Stderr, "[export] append security event failed: %v\n", err)
+	}
+}
 
 //export RegisterMessageCallback
 func RegisterMessageCallback(callback C.DartCallback) *C.char {
@@ -1027,86 +1100,113 @@ func UpdateVersionCheckLanguageFFI(langC *C.char) *C.char {
 	return jsonToCString(map[string]interface{}{"success": true})
 }
 
-// ==================== 辅助函数 FFI ====================
-
-// ==================== API 服务 FFI ====================
+// ==================== API Server FFI ====================
 
 //export StartAPIServerFFI
 func StartAPIServerFFI(configJSON *C.char) *C.char {
-	var req struct {
-		Port int `json:"port"`
-	}
+	apiServerLock.Lock()
+	defer apiServerLock.Unlock()
 
-	if err := json.Unmarshal([]byte(C.GoString(configJSON)), &req); err != nil {
-		return errorCString(fmt.Errorf("invalid config json: %w", err))
-	}
-
-	apiServerMu.Lock()
-	defer apiServerMu.Unlock()
-
-	if apiServer == nil {
-		apiServer = api.NewAPIServer()
-	}
-
-	apiServer.SetShutdownHandler(func(options api.AppShutdownOptions) error {
-		return emitAppShutdownRequest(options)
-	})
-
-	if apiServer.IsRunning() {
-		port := apiServer.Port()
+	// 检查是否已有 apiServer 在运行
+	if apiServer != nil && apiServer.IsRunning() {
 		return jsonToCString(map[string]interface{}{
-			"success": true,
-			"running": true,
-			"port":    port,
-			"token":   apiServer.Token(),
-			"url":     fmt.Sprintf("http://127.0.0.1:%d", port),
+			"success": false,
+			"error":   "API server is already running",
 		})
 	}
 
-	if err := apiServer.Start(req.Port); err != nil {
-		return errorCString(err)
+	// 解析配置
+	var config struct {
+		Port int `json:"port"`
+	}
+	if err := json.Unmarshal([]byte(C.GoString(configJSON)), &config); err != nil {
+		return jsonToCString(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("invalid config: %v", err),
+		})
 	}
 
-	port := apiServer.Port()
+	// 使用默认端口 23481
+	port := config.Port
+	if port == 0 {
+		port = 23481
+	}
+
+	// 创建并启动 API Server
+	apiServer = api.NewAPIServer()
+	apiServer.SetShutdownHandler(func(options api.AppShutdownOptions) error {
+		return triggerAppShutdown(options)
+	})
+	if err := apiServer.Start(port); err != nil {
+		apiServer = nil
+		return jsonToCString(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+	}
+
 	return jsonToCString(map[string]interface{}{
 		"success": true,
-		"running": true,
-		"port":    port,
+		"port":    apiServer.Port(),
 		"token":   apiServer.Token(),
-		"url":     fmt.Sprintf("http://127.0.0.1:%d", port),
+		"url":     fmt.Sprintf("http://127.0.0.1:%d", apiServer.Port()),
 	})
 }
 
 //export StopAPIServerFFI
 func StopAPIServerFFI() *C.char {
-	apiServerMu.Lock()
-	defer apiServerMu.Unlock()
+	apiServerLock.Lock()
+	defer apiServerLock.Unlock()
 
-	if apiServer == nil {
+	// 检查是否有 apiServer 在运行
+	if apiServer == nil || !apiServer.IsRunning() {
 		return jsonToCString(map[string]interface{}{
-			"success": true,
-			"running": false,
-			"message": "api server not initialized",
+			"success": false,
+			"error":   "API server is not running",
 		})
 	}
 
+	// 停止 API Server
 	if err := apiServer.Stop(); err != nil {
-		return errorCString(err)
+		return jsonToCString(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
 	}
 
-	return jsonToCString(map[string]interface{}{
-		"success": true,
-		"running": false,
-	})
+	// 置空引用
+	apiServer = nil
+
+	return jsonToCString(map[string]interface{}{"success": true})
 }
 
-//export RegisterAppShutdownCallback
-func RegisterAppShutdownCallback(callback C.AppShutdownCallback) *C.char {
+// ==================== 辅助函数 FFI ====================
+
+func triggerAppShutdown(options api.AppShutdownOptions) error {
 	appShutdownCallbackMu.Lock()
 	defer appShutdownCallbackMu.Unlock()
 
-	C.setAppShutdownCallback(callback)
-	return jsonToCString(map[string]interface{}{"success": true})
+	if !appShutdownCallbackOn {
+		return fmt.Errorf("app shutdown callback is not registered")
+	}
+
+	payload, err := json.Marshal(options)
+	if err != nil {
+		return fmt.Errorf("marshal shutdown payload: %w", err)
+	}
+
+	C.invokeDartAppShutdownCallback(C.CString(string(payload)))
+	return nil
+}
+
+//export RegisterAppShutdownCallback
+func RegisterAppShutdownCallback(callback C.DartAppShutdownCallback) *C.char {
+	appShutdownCallbackMu.Lock()
+	defer appShutdownCallbackMu.Unlock()
+
+	C.setDartAppShutdownCallback(callback)
+	appShutdownCallbackOn = true
+	return jsonToCString(map[string]interface{}{"success": true, "mode": "callback"})
 }
 
 //export UnregisterAppShutdownCallback
@@ -1114,7 +1214,8 @@ func UnregisterAppShutdownCallback() *C.char {
 	appShutdownCallbackMu.Lock()
 	defer appShutdownCallbackMu.Unlock()
 
-	C.clearAppShutdownCallback()
+	appShutdownCallbackOn = false
+	C.clearDartAppShutdownCallback()
 	return jsonToCString(map[string]interface{}{"success": true})
 }
 
@@ -1294,26 +1395,26 @@ func GetAllTruthRecordSnapshots() *C.char {
 	return C.CString(proxy.GetAllTruthRecordSnapshotsInternal())
 }
 
-// ==================== Audit Log FFI (core/proxy — backed by TruthRecord) ====================
+// ==================== Audit Log FFI (core/proxy chain tracker) ====================
 
 //export GetAuditLogs
 func GetAuditLogs(limit, offset C.int, riskOnly C.int) *C.char {
-	return C.CString(proxy.GetTruthRecordsInternal(int(limit), int(offset), riskOnly != 0))
+	return C.CString(proxy.GetAuditLogsInternal(int(limit), int(offset), riskOnly != 0))
 }
 
 //export GetPendingAuditLogs
 func GetPendingAuditLogs() *C.char {
-	return C.CString(proxy.GetPendingTruthRecordsInternal())
+	return C.CString(proxy.GetPendingAuditLogsInternal())
 }
 
 //export ClearAuditLogs
 func ClearAuditLogs() *C.char {
-	return C.CString(proxy.ClearTruthRecordsInternal())
+	return C.CString(proxy.ClearAuditLogsInternal())
 }
 
 //export ClearAuditLogsWithFilter
 func ClearAuditLogsWithFilter(jsonC *C.char) *C.char {
-	return C.CString(proxy.ClearTruthRecordsWithFilterInternal(C.GoString(jsonC)))
+	return C.CString(proxy.ClearAuditLogsWithFilterInternal(C.GoString(jsonC)))
 }
 
 // ==================== Gateway Sandbox FFI (plugin capability dispatch) ====================

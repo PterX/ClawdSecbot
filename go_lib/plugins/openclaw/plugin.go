@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -333,7 +332,7 @@ func (p *OpenclawPlugin) OnBeforeProxyStop(ctx *core.ProtectionContext) {
 	backupDir := ctx.BackupDir
 	if backupDir == "" {
 		homeDir, _ := os.UserHomeDir()
-		backupDir = filepath.Join(homeDir, ".botsec", "backups")
+		backupDir = core.ResolveBackupDir(homeDir)
 	}
 
 	_ = backupDir // 保留兼容路径推导，当前退出恢复不依赖初始整文件备份。
