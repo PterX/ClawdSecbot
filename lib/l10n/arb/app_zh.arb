@@ -176,6 +176,16 @@
       "version": {"type": "String"}
     }
   },
+  "riskOpenclawInsecureOrDangerousFlags": "网关启用了不安全或危险选项",
+  "riskOpenclawInsecureOrDangerousFlagsDesc": "检测到 OpenClaw 网关配置中启用了会削弱认证或来源信任保护的危险选项。除非有严格且已验证的威胁模型豁免，否则应立即关闭这些选项。",
+  "riskOpenclawConfigPatchOutdated": "OpenClaw 配置安全补丁缺失",
+  "riskOpenclawConfigPatchOutdatedDesc": "当前 OpenClaw 版本（{currentVersion}）缺少已发布的配置安全修复。请立即升级到 {requiredVersion} 或更高版本。",
+  "@riskOpenclawConfigPatchOutdatedDesc": {
+    "placeholders": {
+      "currentVersion": {"type": "String"},
+      "requiredVersion": {"type": "String"}
+    }
+  },
 
   "riskSkillsNotScanned": "Skills 未进行提示词注入扫描",
   "riskSkillsNotScannedDesc": "{count} 个 Skill 尚未进行提示词注入风险扫描: {skills}。点击执行扫描。",
