@@ -238,11 +238,11 @@ func createGeminiModel(ctx context.Context, config *repository.SecurityModelConf
 	})
 }
 
-// createQianfanModel 创建千帆 ChatModel 实例。
-// 千帆 ModelBuilder V2 提供 OpenAI 兼容协议：
-//   - 默认 BaseURL：https://qianfan.baidubce.com/v2
-//   - 鉴权：Authorization: Bearer <api_key>（单一 API Key，无需 Secret Key）
-//   - 参考文档：https://cloud.baidu.com/doc/qianfan-api/s/3m7of64lb
+// createQianfanModel creates a Qianfan ChatModel instance.
+// Qianfan ModelBuilder V2 exposes an OpenAI-compatible protocol:
+//   - Default base URL: https://qianfan.baidubce.com/v2
+//   - Auth: Authorization: Bearer <api_key> (single API key, no secret key)
+//   - Reference: https://cloud.baidu.com/doc/qianfan-api/s/3m7of64lb
 func createQianfanModel(ctx context.Context, config *repository.SecurityModelConfig) (model.ChatModel, error) {
 	if config.APIKey == "" {
 		return nil, fmt.Errorf("Qianfan API key is required")

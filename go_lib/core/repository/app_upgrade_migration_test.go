@@ -1,9 +1,13 @@
 package repository
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -197,6 +201,16 @@ func TestInitDBWithVersion_UpgradesFrom1_0_2To1_0_3_RebuildsAuditAndRiskTables(t
 	}
 
 	prepareSQLiteFile(t, dbPath, func(db *sql.DB) {
+		if err := createProtectionTables(db); err != nil {
+			t.Fatalf("Failed to create protection tables: %v", err)
+		}
+		if err := createMetricsTables(db); err != nil {
+			t.Fatalf("Failed to create metrics tables: %v", err)
+		}
+		if err := createSecurityEventTables(db); err != nil {
+			t.Fatalf("Failed to create security event tables: %v", err)
+		}
+
 		if _, err := db.Exec(`CREATE TABLE audit_logs (id TEXT PRIMARY KEY, legacy_col TEXT)`); err != nil {
 			t.Fatalf("Failed to create legacy audit_logs: %v", err)
 		}
@@ -231,6 +245,66 @@ func TestInitDBWithVersion_UpgradesFrom1_0_2To1_0_3_RebuildsAuditAndRiskTables(t
 		if _, err := db.Exec(`INSERT INTO skill_scans (skill_name) VALUES ('legacy_skill')`); err != nil {
 			t.Fatalf("Failed to seed legacy skill_scans: %v", err)
 		}
+
+		assetName := "Openclaw"
+		configPath := "/Users/test/.openclaw/config.json"
+		oldAssetID := legacyComputeAssetID(assetName, configPath, []int{3000, 13436}, []string{
+			"/usr/local/bin/openclaw",
+			"/Applications/Openclaw.app",
+		})
+
+		if _, err := db.Exec(`
+			INSERT INTO protection_config (
+				asset_name, asset_id, inherits_default_policy, enabled, audit_only, sandbox_enabled,
+				gateway_binary_path, gateway_config_path, custom_security_prompt,
+				single_session_token_limit, daily_token_limit,
+				path_permission, network_permission, shell_permission, bot_model_config,
+				created_at, updated_at
+			) VALUES (?, ?, 0, 1, 0, 1, ?, ?, '', 100000, 5000000, '{}', '{}', '{}', '{}', ?, ?)
+		`,
+			assetName,
+			oldAssetID,
+			"/usr/local/bin/openclaw",
+			configPath,
+			"2026-04-01T10:00:00Z",
+			"2026-04-01T10:05:00Z",
+		); err != nil {
+			t.Fatalf("Failed to seed protection_config: %v", err)
+		}
+
+		if _, err := db.Exec(`
+			INSERT INTO protection_statistics (
+				asset_name, asset_id, analysis_count, message_count, warning_count, blocked_count,
+				total_tokens, total_prompt_tokens, total_completion_tokens, total_tool_calls,
+				request_count, audit_tokens, audit_prompt_tokens, audit_completion_tokens, updated_at
+			) VALUES (?, ?, 11, 22, 3, 4, 100, 60, 40, 5, 6, 7, 4, 3, ?)
+		`, assetName, oldAssetID, "2026-04-01T10:06:00Z"); err != nil {
+			t.Fatalf("Failed to seed protection_statistics: %v", err)
+		}
+
+		if _, err := db.Exec(`
+			INSERT INTO shepherd_rules (asset_id, asset_name, sensitive_actions, updated_at)
+			VALUES (?, ?, '["delete","rm"]', ?)
+		`, oldAssetID, assetName, "2026-04-01T10:07:00Z"); err != nil {
+			t.Fatalf("Failed to seed shepherd_rules: %v", err)
+		}
+
+		if _, err := db.Exec(`
+			INSERT INTO api_metrics (
+				timestamp, prompt_tokens, completion_tokens, total_tokens, tool_call_count,
+				model, is_blocked, risk_level, asset_name, asset_id
+			) VALUES (?, 1, 2, 3, 4, 'gpt-4.1', 0, '', ?, ?)
+		`, "2026-04-01T10:08:00Z", assetName, oldAssetID); err != nil {
+			t.Fatalf("Failed to seed api_metrics: %v", err)
+		}
+
+		if _, err := db.Exec(`
+			INSERT INTO security_events (
+				id, timestamp, event_type, action_desc, risk_type, detail, source, asset_name, asset_id, request_id
+			) VALUES ('evt_1', ?, 'blocked', 'blocked command', 'QUOTA', 'legacy', 'react_agent', ?, ?, 'req_1')
+		`, "2026-04-01T10:09:00Z", assetName, oldAssetID); err != nil {
+			t.Fatalf("Failed to seed security_events: %v", err)
+		}
 	})
 
 	summary, err := InitDBWithVersion(dbPath, "1.0.3", versionFilePath)
@@ -260,6 +334,18 @@ func TestInitDBWithVersion_UpgradesFrom1_0_2To1_0_3_RebuildsAuditAndRiskTables(t
 	assertTableRowCount(t, GetDB(), "assets", 0)
 	assertTableRowCount(t, GetDB(), "risks", 0)
 	assertTableRowCount(t, GetDB(), "skill_scans", 0)
+
+	expectedAssetID := computeStableAssetIDForMigration("Openclaw", "/Users/test/.openclaw/config.json")
+	legacyAssetID := legacyComputeAssetID("Openclaw", "/Users/test/.openclaw/config.json", []int{3000, 13436}, []string{
+		"/usr/local/bin/openclaw",
+		"/Applications/Openclaw.app",
+	})
+	assertTableRowCountWithPredicate(t, GetDB(), "protection_config", "asset_id = '"+expectedAssetID+"'", 1)
+	assertTableRowCountWithPredicate(t, GetDB(), "protection_statistics", "asset_id = '"+expectedAssetID+"'", 1)
+	assertTableRowCountWithPredicate(t, GetDB(), "shepherd_rules", "asset_id = '"+expectedAssetID+"'", 1)
+	assertTableRowCountWithPredicate(t, GetDB(), "api_metrics", "asset_id = '"+expectedAssetID+"'", 1)
+	assertTableRowCountWithPredicate(t, GetDB(), "security_events", "asset_id = '"+expectedAssetID+"'", 1)
+	assertTableRowCountWithPredicate(t, GetDB(), "protection_config", "asset_id = '"+legacyAssetID+"'", 0)
 }
 
 func prepareSQLiteFile(t *testing.T, dbPath string, setup func(db *sql.DB)) {
@@ -323,4 +409,48 @@ func assertTableRowCount(t *testing.T, db *sql.DB, tableName string, expected in
 	if count != expected {
 		t.Fatalf("Expected %d rows in %s, got %d", expected, tableName, count)
 	}
+}
+
+func assertTableRowCountWithPredicate(t *testing.T, db *sql.DB, tableName, predicate string, expected int) {
+	t.Helper()
+
+	var count int
+	if err := db.QueryRow(
+		`SELECT COUNT(1) FROM ` + quoteSQLiteIdentifier(tableName) + ` WHERE ` + predicate,
+	).Scan(&count); err != nil {
+		t.Fatalf("Failed to count rows in %s with predicate %q: %v", tableName, predicate, err)
+	}
+	if count != expected {
+		t.Fatalf("Expected %d rows in %s with predicate %q, got %d", expected, tableName, predicate, count)
+	}
+}
+
+func legacyComputeAssetID(name, configPath string, ports []int, processPaths []string) string {
+	nameLower := strings.ToLower(strings.TrimSpace(name))
+	parts := []string{"name=" + nameLower}
+
+	configPath = strings.TrimSpace(configPath)
+	if configPath != "" {
+		parts = append(parts, "config="+configPath)
+	}
+
+	if len(ports) > 0 {
+		sortedPorts := append([]int(nil), ports...)
+		sort.Ints(sortedPorts)
+		portStrings := make([]string, 0, len(sortedPorts))
+		for _, port := range sortedPorts {
+			portStrings = append(portStrings, fmt.Sprintf("%d", port))
+		}
+		parts = append(parts, "ports="+strings.Join(portStrings, ","))
+	}
+
+	if len(processPaths) > 0 {
+		sortedPaths := append([]string(nil), processPaths...)
+		sort.Strings(sortedPaths)
+		parts = append(parts, "paths="+strings.Join(sortedPaths, ","))
+	}
+
+	canonical := strings.Join(parts, "|")
+	hash := sha256.Sum256([]byte(canonical))
+	return fmt.Sprintf("%s:%x", nameLower, hash[:6])
 }
