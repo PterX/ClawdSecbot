@@ -1203,6 +1203,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tokenUnitM => 'M';
 
   @override
+  String get tokenUnitBase => 'tokens';
+
+  @override
   String get tokenPresetLabel => 'Quick select';
 
   @override
@@ -2039,6 +2042,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get eventOther => 'Other Event';
+
+  @override
+  String get eventTypeWarning => 'Warning';
+
+  @override
+  String get riskTypeQuota => 'Quota Limited';
+
+  @override
+  String get riskTypeSandboxBlocked => 'Sandbox Blocked';
+
+  @override
+  String get riskTypeNeedsConfirmation => 'Needs Confirmation';
 
   @override
   String get eventTime => 'Time';

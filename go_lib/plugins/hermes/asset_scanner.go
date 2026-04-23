@@ -120,7 +120,7 @@ func (s *HermesAssetScanner) rewriteStableAssetID(asset *core.Asset) {
 		configPath = strings.TrimSpace(s.configPath)
 	}
 	previous := strings.TrimSpace(asset.ID)
-	asset.ID = core.ComputeAssetID(hermesAssetName, configPath, nil, nil)
+	asset.ID = core.ComputeAssetID(hermesAssetName, configPath)
 	if previous != "" && previous != asset.ID {
 		logging.Info("[HermesScanner] rewrote volatile asset_id %s -> %s", previous, asset.ID)
 	}

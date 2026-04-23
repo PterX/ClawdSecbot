@@ -62,12 +62,12 @@ type ProtectionLifecycleHooks interface {
 
 ### 5.1 构建稳定指纹
 
-使用 `core.ComputeAssetID(name, configPath, ports, processPaths)` 生成确定性 ID。
+使用 `core.ComputeAssetID(name, configPath)` 生成确定性 ID。
 
 规则：
 
-- 指纹输入要稳定、可规范化。
-- 只包含能识别实例的字段。
+- 指纹输入仅限 `name` + `config_path`，两者都要稳定、可规范化。
+- **禁止**把 `ports`、`process_paths`、`pid`、`service_name` 等运行态动态信息卷入指纹，否则 bot 启停会让 `asset_id` 漂移，出现同一资产两条记录、启用防护后策略丢失等问题。
 - 不要引入易变字段（时间戳、临时路径、随机值）。
 
 ### 5.2 SourcePlugin

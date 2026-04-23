@@ -83,6 +83,7 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 
 			pp.emitMonitorRequestCreated(req, rawBody, stream)
 			pp.emitMonitorSecurityDecision("QUOTA_EXCEEDED", reason, true, mockMsg)
+			pp.emitSecurityEvent(requestID, "blocked", "Conversation token quota exceeded", "QUOTA", reason)
 			pp.emitMonitorResponseReturned("QUOTA_EXCEEDED", mockMsg, mockMsg)
 			pp.auditLogSafe("set_decision_quota_conversation", func(tracker *AuditChainTracker) {
 				tracker.SetRequestDecision(requestID, "BLOCK", "QUOTA", reason, 100)
@@ -145,6 +146,7 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 
 			pp.emitMonitorRequestCreated(req, rawBody, stream)
 			pp.emitMonitorSecurityDecision("QUOTA_EXCEEDED", reason, true, mockMsg)
+			pp.emitSecurityEvent(requestID, "blocked", "Daily token quota exceeded", "QUOTA", reason)
 			pp.emitMonitorResponseReturned("QUOTA_EXCEEDED", mockMsg, mockMsg)
 			pp.auditLogSafe("set_decision_quota_daily", func(tracker *AuditChainTracker) {
 				tracker.SetRequestDecision(requestID, "BLOCK", "QUOTA", reason, 100)
@@ -692,6 +694,7 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 						false,
 						"",
 					)
+					pp.emitSecurityEvent(requestID, "blocked", "Sandbox blocked tool execution", "SANDBOX_BLOCKED", sandboxReason)
 					pp.auditLogSafe("set_decision_sandbox_blocked", func(tracker *AuditChainTracker) {
 						tracker.SetRequestDecision(
 							requestID,
@@ -783,6 +786,27 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 					pp.warningCount++
 					pp.statsMu.Unlock()
 					pp.sendMetricsToCallback()
+					// Co-locate the SecurityEvent write with blockedCount++ so the UI
+					// "intercept count" and "event list" stay monotonically consistent.
+					shepherdActionDesc := strings.TrimSpace(decision.ActionDesc)
+					if shepherdActionDesc == "" {
+						shepherdActionDesc = decision.Reason
+					}
+					shepherdRiskType := strings.TrimSpace(decision.RiskType)
+					if shepherdRiskType == "" {
+						shepherdRiskType = decision.Status
+					}
+					shepherdDetail := decision.Reason
+					if strings.Contains(decision.Reason, shepherd.PostValidationOverrideTag) {
+						shepherdDetail = "post_validation_override | " + decision.Reason
+					}
+					// NEEDS_CONFIRMATION 不是"已阻断"，而是"待用户确认"；事件类型要与决策状态对齐，
+					// 方便前端按语义着色与本地化展示（_rules/security_event.md §4）。
+					shepherdEventType := "blocked"
+					if decision.Status == "NEEDS_CONFIRMATION" {
+						shepherdEventType = "needs_confirmation"
+					}
+					pp.emitSecurityEvent(requestID, shepherdEventType, shepherdActionDesc, shepherdRiskType, shepherdDetail)
 					pp.emitMonitorResponseReturned(decision.Status, securityMsg, securityMsg)
 					pp.auditLogSafe("set_decision_shepherd_blocked", func(tracker *AuditChainTracker) {
 						tracker.SetRequestDecision(requestID, recordAction, recordRiskLevel, decision.Reason, 100)

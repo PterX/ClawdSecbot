@@ -63,24 +63,23 @@
 - 插件必须实现 `BotPlugin` 并在 `init()` 注册到 `PluginManager`。
 - `BotPlugin` 关键方法组：
   `GetID/GetAssetName/GetManifest/GetAssetUISchema/ScanAssets/AssessRisks/MitigateRisk/StartProtection/StopProtection/GetProtectionStatus`。
-- 每个资产实例必须生成稳定 `asset_id`（由名称、配置路径、端口、进程路径等指纹计算）。
+- 每个资产实例必须生成稳定 `asset_id`，仅由名称与配置路径参与指纹计算。
 - 运行时绑定关系：`1 asset_id : 1 plugin instance`。
 - 防护、事件、指标、状态查询必须按 `asset_id` 路由，避免跨实例串数据。
 - FFI 防护接口只接受 `asset_id`，禁止传 `asset_name`；Go 内部通过实例绑定解析插件名。
 
 ### 6.1 `asset_id` 生成规范
 
-- 统一调用 `core.ComputeAssetID(name, configPath, ports, processPaths)`，禁止插件自实现另一套算法。
-- 参与指纹字段：`name`、`config_path`、`ports`、`process_paths`。
+- 统一调用 `core.ComputeAssetID(name, configPath)`，禁止插件自实现另一套算法。
+- **仅**允许以下字段参与指纹：`name`、`config_path`。
+- **禁止**将运行态动态信息（`ports`、`process_paths`、`pid`、`service_name` 等）卷入指纹，否则 bot 启停会导致 `asset_id` 漂移，出现"同一资产对应多条策略"或"启用防护后策略丢失"的问题。
 - 规范化顺序：
   - `name` 小写：`name=<lowercase_name>`
   - `config_path` 非空：`config=<config_path>`
-  - `ports` 升序：`ports=1,2,3`
-  - `process_paths` 字典序：`paths=/a,/b`
   - 使用 `|` 拼接 canonical 字符串
 - 哈希算法：`sha256(canonical)`，取前 6 字节十六进制（12 位）。
 - 输出格式：`<lowercase_name>:<12hex>`（例：`openclaw:1a2b3c4d5e6f`）。
-- 字段不变则 `asset_id` 必须稳定；任一指纹字段变化必须触发 `asset_id` 变化。
+- 同一 `(name, config_path)` 必须在任何运行态下产生相同 `asset_id`；`config_path` 变化必须触发 `asset_id` 变化。
 
 ### 6.2 `mitigation` 生成规范
 
@@ -98,6 +97,7 @@
 - 监控/审计相关实现必须满足：并发可关联、链路可追溯、写入幂等、失败不阻断主业务。
 - 详细实现规范见独立文档：
   - [`_rules/audit_chain.md`](audit_chain.md)
+  - [`_rules/security_event.md`](security_event.md)
 
 ## 8. 沙箱规范
 

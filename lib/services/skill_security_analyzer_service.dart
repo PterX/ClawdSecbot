@@ -105,7 +105,7 @@ class SkillSecurityAnalyzerService {
       'model': config.model,
       if (config.secretKey.isNotEmpty) 'secret_key': config.secretKey,
     };
-    return _callOneArg('TestModelConnectionFFI', jsonEncode(request));
+    return _callOneArgAsync('TestModelConnectionFFI', jsonEncode(request));
   }
 
   Future<Map<String, dynamic>> startBatchScan() async {
@@ -241,6 +241,23 @@ class SkillSecurityAnalyzerService {
     }
     try {
       return transport.callOneArg(method, arg);
+    } catch (e) {
+      appLogger.error('[SkillSecurityAnalyzer] $method failed', e);
+      return {'success': false, 'error': '$method failed: $e'};
+    }
+  }
+
+  /// 异步 FFI 调用：将长耗时同步 FFI 转发到后台 isolate，避免阻塞 UI isolate。
+  Future<Map<String, dynamic>> _callOneArgAsync(
+    String method,
+    String arg,
+  ) async {
+    final transport = TransportRegistry.transport;
+    if (!transport.isReady) {
+      return {'success': false, 'error': 'Transport not initialized'};
+    }
+    try {
+      return await transport.callOneArgAsync(method, arg);
     } catch (e) {
       appLogger.error('[SkillSecurityAnalyzer] $method failed', e);
       return {'success': false, 'error': '$method failed: $e'};

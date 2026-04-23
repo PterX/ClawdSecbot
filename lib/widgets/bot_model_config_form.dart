@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../utils/app_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../l10n/app_localizations.dart';
 import '../models/llm_config_model.dart';
-import '../services/app_settings_database_service.dart';
 import '../services/model_config_service.dart';
 import '../services/model_config_database_service.dart';
 import '../services/protection_service.dart';
@@ -35,18 +33,23 @@ class BotModelConfigForm extends StatefulWidget {
 
 /// State for bot model configuration form.
 class BotModelConfigFormState extends State<BotModelConfigForm> {
-  /// Bot 模型按供应商草稿缓存键前缀。
-  static const String _providerDraftSettingKeyPrefix =
-      'bot_model_provider_drafts_v1';
-
   late BotModelConfigService _service;
   final ProviderService _providerService = ProviderService();
-  final AppSettingsDatabaseService _appSettingsService =
-      AppSettingsDatabaseService();
   bool _loading = true;
   bool _saving = false;
   bool _testing = false;
+  bool _showApiKey = false;
+  bool _showSecretKey = false;
   String? _error;
+
+  /// 连通性测试版本号：每次发起测试自增，切换 provider / 关闭表单 /
+  /// 发起新测试时自增即可使在途请求的结果被丢弃，实现 UI 侧"取消"。
+  int _testSeq = 0;
+
+  /// 当前在途的连通性测试 completer。切换 provider / 关闭表单 / 重新发起测试
+  /// 时以 null 完成它，让 [validateConnection] 的 Future 立即 resolve，
+  /// 外层按钮的 loading 态可以即时清除（不必等 Go 侧最长 30s 的超时）。
+  Completer<Map<String, dynamic>?>? _activeTestCompleter;
 
   final TextEditingController _endpointController = TextEditingController();
   final TextEditingController _apiKeyController = TextEditingController();
@@ -54,6 +57,9 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
   final TextEditingController _secretKeyController = TextEditingController();
   String _selectedType = 'openai';
   String _savedConfigSignature = '';
+
+  /// 按 provider 缓存的草稿，仅存在于内存中。
+  /// 切换 provider 不触发任何持久化，避免主线程被 FFI 同步调用阻塞。
   final Map<String, BotModelConfig> _providerDrafts = {};
 
   /// Dynamically loaded providers from Go layer.
@@ -170,32 +176,34 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
     ].join('|');
   }
 
-  /// Loads current configuration into the form.
+  /// 从数据库加载已保存的 Bot 模型配置并显示到对应 provider 的表单上。
+  /// 未保存过的 provider 仅保留内存空草稿，UI 字段留空并由 hint 展示默认值。
   Future<void> _loadConfig() async {
     try {
-      await _loadProviderDrafts();
       final config = await _service.loadConfig();
+      if (!mounted) return;
       if (config != null) {
         final selectedType = _normalizeSelectedType(config.provider);
         _providerDrafts[selectedType] = config;
-        final selectedConfig =
-            _providerDrafts[selectedType] ?? _createEmptyConfig(selectedType);
         setState(() {
           _selectedType = selectedType;
-          _applyConfigToControllers(selectedConfig);
+          _applyConfigToControllers(config);
           _savedConfigSignature = _buildConfigSignature(config);
           _loading = false;
         });
+        appLogger.info(
+          '[BotModelConfigForm] Loaded saved config from DB: provider=$selectedType',
+        );
       } else {
-        final selectedConfig =
-            _providerDrafts[_selectedType] ?? _createEmptyConfig(_selectedType);
+        final emptyConfig = _createEmptyConfig(_selectedType);
         setState(() {
-          _applyConfigToControllers(selectedConfig);
+          _applyConfigToControllers(emptyConfig);
           _savedConfigSignature = _buildConfigSignature(_buildCurrentConfig());
           _loading = false;
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -220,9 +228,7 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
       setState(() {
         _saving = false;
       });
-      appLogger.info(
-        '[BotModelConfigForm] Config unchanged, skip save.',
-      );
+      appLogger.info('[BotModelConfigForm] Config unchanged, skip save.');
       return true;
     }
 
@@ -239,7 +245,6 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
       if (success) {
         _savedConfigSignature = _buildConfigSignature(config);
         _captureCurrentProviderDraft();
-        await _persistProviderDrafts();
         // Bot 模型保存后，如果代理正在运行且未延迟重启，需要完整重启
         if (!deferProxyRestart) {
           final protectionService = ProtectionService.forAsset(
@@ -253,10 +258,11 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
               if (securityModelConfig != null) {
                 // 需要从数据库获取运行时配置
                 final result = await _runWithBotRestartNotice(
-                  () => protectionService.restartProtectionProxyForBotModelUpdate(
-                    securityModelConfig,
-                    ProtectionRuntimeConfig(),
-                  ),
+                  () =>
+                      protectionService.restartProtectionProxyForBotModelUpdate(
+                        securityModelConfig,
+                        ProtectionRuntimeConfig(),
+                      ),
                 );
                 if (result['success'] == true) {
                   appLogger.info(
@@ -303,6 +309,9 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
   }
 
   /// 手动验证当前配置连通性，不执行保存。
+  /// 使用 [_testSeq] + [_activeTestCompleter] 做 UI 侧取消：
+  /// 切换 provider、关闭弹窗、再次点击测试按钮时，前一次请求会被标记为已取消，
+  /// 其 Future 立刻以 false 返回，外层按钮 loading 态可以即时清除。
   Future<bool> validateConnection() async {
     final l10n = AppLocalizations.of(context)!;
     final config = _buildCurrentConfig();
@@ -313,41 +322,62 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
       return false;
     }
 
+    // 若此前仍有在途测试，以 null 完成其 completer，让对应 Future 立即返回。
+    final previous = _activeTestCompleter;
+    if (previous != null && !previous.isCompleted) {
+      previous.complete(null);
+    }
+
+    final int seq = ++_testSeq;
+    final completer = Completer<Map<String, dynamic>?>();
+    _activeTestCompleter = completer;
+
     setState(() {
       _testing = true;
       _error = null;
     });
-    try {
-      final testResult = await _service.testConnection(config);
-      if (testResult['success'] == true) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(l10n.modelConfigTestSuccess),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-        return true;
-      }
-      setState(() {
-        _error = l10n.modelConfigTestFailed(
-          testResult['error'] ?? 'Unknown error',
-        );
-      });
-      return false;
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-      });
-      return false;
-    } finally {
-      if (mounted) {
-        setState(() {
-          _testing = false;
-        });
-      }
+
+    unawaited(
+      _service
+          .testConnection(config)
+          .then((result) {
+            if (!completer.isCompleted) {
+              completer.complete(result);
+            }
+          })
+          .catchError((Object e) {
+            if (!completer.isCompleted) {
+              completer.complete({'success': false, 'error': e.toString()});
+            }
+          }),
+    );
+
+    final result = await completer.future;
+    if (identical(_activeTestCompleter, completer)) {
+      _activeTestCompleter = null;
     }
+
+    if (!mounted || seq != _testSeq || result == null) {
+      return false;
+    }
+
+    if (result['success'] == true) {
+      setState(() {
+        _testing = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.modelConfigTestSuccess),
+          backgroundColor: Colors.green,
+        ),
+      );
+      return true;
+    }
+    setState(() {
+      _error = l10n.modelConfigTestFailed(result['error'] ?? 'Unknown error');
+      _testing = false;
+    });
+    return false;
   }
 
   /// 执行 Bot 重启动作并显示用户友好的页面提示。
@@ -385,10 +415,6 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
     }
   }
 
-  /// 生成 provider 草稿缓存设置键。
-  String get _providerDraftSettingKey =>
-      '$_providerDraftSettingKeyPrefix:${widget.assetName}:${widget.assetID}';
-
   /// 创建指定 provider 的空白配置。
   BotModelConfig _createEmptyConfig(String providerName) {
     return BotModelConfig(
@@ -415,8 +441,16 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
     _providerDrafts[_selectedType] = _buildCurrentConfig();
   }
 
-  /// 切换 provider 时恢复对应草稿，避免输入被清空。
-  Future<void> _handleProviderSelected(ProviderInfo provider) async {
+  /// 切换 provider 时只在内存中缓存当前草稿并恢复目标 provider 的内存草稿。
+  /// 不执行任何磁盘/FFI 持久化，避免阻塞主线程导致 Windows 界面未响应。
+  /// 同步作废可能在途的连通性测试结果，并立即停止 loading 指示。
+  void _handleProviderSelected(ProviderInfo provider) {
+    _testSeq++;
+    final pending = _activeTestCompleter;
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(null);
+    }
+    _activeTestCompleter = null;
     _captureCurrentProviderDraft();
     final targetConfig =
         _providerDrafts[provider.name] ?? _createEmptyConfig(provider.name);
@@ -425,61 +459,8 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
       _selectedType = provider.name;
       _applyConfigToControllers(targetConfig);
       _error = null;
+      _testing = false;
     });
-    await _persistProviderDrafts();
-  }
-
-  /// 从应用设置读取 provider 草稿缓存。
-  Future<void> _loadProviderDrafts() async {
-    final raw = await _appSettingsService.getSetting(_providerDraftSettingKey);
-    if (raw.isEmpty) {
-      return;
-    }
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map<String, dynamic>) {
-        return;
-      }
-      decoded.forEach((provider, value) {
-        if (value is! Map) {
-          return;
-        }
-        final data = Map<String, dynamic>.from(value);
-        _providerDrafts[provider] = BotModelConfig(
-          assetName: widget.assetName,
-          assetID: widget.assetID,
-          provider: _resolveProviderType(provider),
-          baseUrl: (data['base_url'] as String?) ?? '',
-          apiKey: (data['api_key'] as String?) ?? '',
-          model: (data['model'] as String?) ?? '',
-          secretKey: (data['secret_key'] as String?) ?? '',
-        );
-      });
-    } catch (e) {
-      appLogger.warning(
-        '[BotModelConfigForm] Failed to parse provider drafts: $e',
-      );
-    }
-  }
-
-  /// 持久化 provider 草稿缓存。
-  Future<void> _persistProviderDrafts() async {
-    final payload = <String, dynamic>{};
-    _providerDrafts.forEach((provider, config) {
-      payload[provider] = {
-        'base_url': config.baseUrl,
-        'api_key': config.apiKey,
-        'model': config.model,
-        'secret_key': config.secretKey,
-      };
-    });
-    final saved = await _appSettingsService.saveSetting(
-      _providerDraftSettingKey,
-      jsonEncode(payload),
-    );
-    if (!saved) {
-      appLogger.warning('[BotModelConfigForm] Failed to persist provider drafts');
-    }
   }
 
   /// Returns whether the form is currently saving.
@@ -504,6 +485,11 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
 
   @override
   void dispose() {
+    final pending = _activeTestCompleter;
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(null);
+    }
+    _activeTestCompleter = null;
     _endpointController.dispose();
     _apiKeyController.dispose();
     _modelController.dispose();
@@ -553,7 +539,7 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
               label: provider.displayName,
               icon: _getIconForProvider(provider.icon),
               isSelected: isSelected,
-              onTap: () => unawaited(_handleProviderSelected(provider)),
+              onTap: () => _handleProviderSelected(provider),
             );
           }).toList(),
         ),
@@ -637,7 +623,10 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
                 : l10n.modelConfigApiKey,
             hint: providerInfo?.apiKeyHint ?? 'Your API key',
             icon: LucideIcons.key,
-            obscureText: true,
+            obscureText: !_showApiKey,
+            onToggleObscureText: () => setState(() {
+              _showApiKey = !_showApiKey;
+            }),
           ),
         ],
         const SizedBox(height: 12),
@@ -654,7 +643,10 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
             label: l10n.modelConfigSecretKey,
             hint: 'Your Secret Key',
             icon: LucideIcons.keyRound,
-            obscureText: true,
+            obscureText: !_showSecretKey,
+            onToggleObscureText: () => setState(() {
+              _showSecretKey = !_showSecretKey;
+            }),
           ),
         ],
       ],
@@ -667,7 +659,9 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
     required String hint,
     required IconData icon,
     bool obscureText = false,
+    VoidCallback? onToggleObscureText,
   }) {
+    final hasVisibilityToggle = onToggleObscureText != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -688,6 +682,17 @@ class BotModelConfigFormState extends State<BotModelConfigForm> {
             hintText: hint,
             hintStyle: AppFonts.firaCode(fontSize: 13, color: Colors.white30),
             prefixIcon: Icon(icon, color: Colors.white54, size: 18),
+            suffixIcon: hasVisibilityToggle
+                ? IconButton(
+                    tooltip: obscureText ? '显示明文' : '隐藏明文',
+                    icon: Icon(
+                      obscureText ? LucideIcons.eye : LucideIcons.eyeOff,
+                      color: Colors.white54,
+                      size: 18,
+                    ),
+                    onPressed: onToggleObscureText,
+                  )
+                : null,
             filled: true,
             fillColor: const Color(0xFF1E1E2E),
             border: OutlineInputBorder(

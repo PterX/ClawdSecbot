@@ -17,6 +17,13 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// PostValidationOverrideTag is appended to a ReAct decision's reason when the
+// Go post-validation layer forcibly overrides an LLM-allowed decision due to
+// prompt injection in tool results. Downstream layers (proxy, UI classifiers)
+// detect this tag to attribute the block source without extending the decision
+// struct.
+const PostValidationOverrideTag = "[Post-validation: tool result prompt injection must be blocked]"
+
 // ShepherdDecision represents the decision from ShepherdGate
 type ShepherdDecision struct {
 	Status     string `json:"-"`                 // Internal status: ALLOWED | NEEDS_CONFIRMATION
@@ -337,7 +344,7 @@ func (sg *ShepherdGate) CheckToolCall(ctx context.Context, contextMessages []Con
 				"LLM allowed but prompt injection detected in tool result, forcing block. "+
 				"risk_type=%s, risk_level=%s", reactDecision.RiskType, reactDecision.RiskLevel)
 			reactDecision.Allowed = false
-			reactDecision.Reason = reactDecision.Reason + " [Post-validation: tool result prompt injection must be blocked]"
+			reactDecision.Reason = reactDecision.Reason + " " + PostValidationOverrideTag
 		}
 	}
 

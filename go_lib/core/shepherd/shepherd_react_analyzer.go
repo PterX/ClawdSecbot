@@ -336,22 +336,10 @@ func (a *ToolCallReActAnalyzer) Analyze(ctx context.Context, contextMessages []C
 		logging.Info("[ShepherdGate][Analyze][%s] heuristic hit: allowed=%v, skill=heuristic, reason=%s",
 			session.ID, heuristic.Allowed, shortenForLog(heuristic.Reason, 300))
 		heuristic.Usage = &Usage{}
-
-		eventType := "blocked"
-		if heuristic.Allowed {
-			eventType = "tool_execution"
-		}
-		securityEventBuffer.AddSecurityEvent(SecurityEvent{
-			BotID:      botIDFromContext(ctx),
-			EventType:  eventType,
-			ActionDesc: heuristic.Reason,
-			RiskType:   heuristic.RiskLevel,
-			Source:     "heuristic",
-			AssetName:  a.assetName,
-			AssetID:    a.assetID,
-			RequestID:  reqID,
-		})
-
+		// SecurityEvent is persisted by the proxy decision sink after this decision
+		// propagates up (see ProxyProtection.emitSecurityEvent). Do not emit here to
+		// avoid duplicated records per the single-authoritative-source rule
+		// (_rules/security_event.md).
 		return heuristic, nil
 	}
 	traceGuard(session.ID, "Heuristic", "no critical pattern hit, proceeding to ADK agent")

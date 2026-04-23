@@ -2064,6 +2064,12 @@ abstract class AppLocalizations {
   /// **'百万'**
   String get tokenUnitM;
 
+  /// No description provided for @tokenUnitBase.
+  ///
+  /// In zh, this message translates to:
+  /// **'个'**
+  String get tokenUnitBase;
+
   /// No description provided for @tokenPresetLabel.
   ///
   /// In zh, this message translates to:
@@ -3567,6 +3573,30 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'其他事件'**
   String get eventOther;
+
+  /// No description provided for @eventTypeWarning.
+  ///
+  /// In zh, this message translates to:
+  /// **'告警'**
+  String get eventTypeWarning;
+
+  /// No description provided for @riskTypeQuota.
+  ///
+  /// In zh, this message translates to:
+  /// **'配额限制'**
+  String get riskTypeQuota;
+
+  /// No description provided for @riskTypeSandboxBlocked.
+  ///
+  /// In zh, this message translates to:
+  /// **'沙箱拦截'**
+  String get riskTypeSandboxBlocked;
+
+  /// No description provided for @riskTypeNeedsConfirmation.
+  ///
+  /// In zh, this message translates to:
+  /// **'待确认'**
+  String get riskTypeNeedsConfirmation;
 
   /// No description provided for @eventTime.
   ///

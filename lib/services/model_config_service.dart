@@ -59,7 +59,7 @@ class SecurityModelConfigService {
     };
 
     try {
-      return transport.callOneArg(
+      return await transport.callOneArgAsync(
         'TestModelConnectionFFI',
         jsonEncode(request),
       );
@@ -149,7 +149,7 @@ class BotModelConfigService {
     };
 
     try {
-      return transport.callOneArg(
+      return await transport.callOneArgAsync(
         'TestModelConnectionFFI',
         jsonEncode(request),
       );
