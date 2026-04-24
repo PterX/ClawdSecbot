@@ -14,7 +14,10 @@
 - 架构分层：Flutter Desktop（UI/状态）+ Go（业务）+ FFI（通信）。
 - Go 以 `c-shared` 构建单一动态库：`botsec.dylib` / `botsec.so` / `botsec.dll`。
 - 支持平台：macOS（arm64/x86_64）、Linux（arm64/x86_64）、Windows（x86_64）、webui。
-- 任何改动都需要兼容desktop版本和webui版本的工作
+- 本地调试启动脚本约定：
+  - Desktop 版本使用 `./scripts/run_with_pprof.sh`。
+  - WebUI 版本使用 `./scripts/run_web_with_pprof.sh`。
+- 所有功能改动必须同时兼容 Desktop 与 WebUI；禁止只修一端导致另一端不可构建或不可启动。
 
 ## 2. 目录职责
 
@@ -95,9 +98,7 @@
 - 监控（实时态）与审计（持久态）允许采用不同数据结构，但必须边界清晰、职责不重叠。
 - 同一 UI 视图只允许一个主数据源，禁止在页面层混读两套语义相近的数据并做隐式合并。
 - 监控/审计相关实现必须满足：并发可关联、链路可追溯、写入幂等、失败不阻断主业务。
-- 详细实现规范见独立文档：
-  - [`_rules/audit_chain.md`](audit_chain.md)
-  - [`_rules/security_event.md`](security_event.md)
+- 详细实现规范见独立文档：[`_rules/security_event.md`](security_event.md)。
 
 ## 8. 沙箱规范
 

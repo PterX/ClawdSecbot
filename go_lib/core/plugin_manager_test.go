@@ -204,7 +204,7 @@ func TestPluginManager_GetProtectionStatus_ResolvedByAssetID(t *testing.T) {
 	}
 }
 
-func TestPluginManager_MitigateRisk_RejectsSourcePluginInvalid(t *testing.T) {
+func TestPluginManager_MitigateRisk_RejectsAssetIDInvalid(t *testing.T) {
 	pm := &PluginManager{
 		registeredPlugins: make(map[string]BotPlugin),
 		instances:         make(map[string]*AssetPluginInstance),
@@ -213,15 +213,21 @@ func TestPluginManager_MitigateRisk_RejectsSourcePluginInvalid(t *testing.T) {
 		testPlugin:    *newTestPlugin("Openclaw"),
 		handledRiskID: "logging_redact_off",
 	}
+	p.assets = []Asset{
+		{ID: "openclaw:abc123", Name: "Openclaw", SourcePlugin: "Openclaw"},
+	}
 	pm.Register(p)
+	if _, err := pm.ScanAllAssets(); err != nil {
+		t.Fatalf("ScanAllAssets failed: %v", err)
+	}
 
-	result := pm.MitigateRisk(`{"id":"logging_redact_off","source_plugin":"core"}`)
+	result := pm.MitigateRisk(`{"id":"logging_redact_off","source_plugin":"openclaw","asset_id":"openclaw:missing"}`)
 	if !strings.Contains(result, `"success":false`) {
-		t.Fatalf("expected strict failure for unknown source plugin, got: %s", result)
+		t.Fatalf("expected strict failure for unknown asset_id, got: %s", result)
 	}
 }
 
-func TestPluginManager_MitigateRisk_RejectsSourcePluginMissing(t *testing.T) {
+func TestPluginManager_MitigateRisk_RejectsAssetIDMissing(t *testing.T) {
 	pm := &PluginManager{
 		registeredPlugins: make(map[string]BotPlugin),
 		instances:         make(map[string]*AssetPluginInstance),
@@ -233,12 +239,12 @@ func TestPluginManager_MitigateRisk_RejectsSourcePluginMissing(t *testing.T) {
 	pm.Register(p)
 
 	result := pm.MitigateRisk(`{"id":"logging_redact_off"}`)
-	if !strings.Contains(result, `"source_plugin is required"`) {
-		t.Fatalf("expected strict source_plugin required error, got: %s", result)
+	if !strings.Contains(result, `"asset_id is required"`) {
+		t.Fatalf("expected strict asset_id required error, got: %s", result)
 	}
 }
 
-func TestPluginManager_MitigateRisk_RoutesBySourcePlugin(t *testing.T) {
+func TestPluginManager_MitigateRisk_RoutesByAssetID(t *testing.T) {
 	pm := &PluginManager{
 		registeredPlugins: make(map[string]BotPlugin),
 		instances:         make(map[string]*AssetPluginInstance),
@@ -247,11 +253,17 @@ func TestPluginManager_MitigateRisk_RoutesBySourcePlugin(t *testing.T) {
 		testPlugin:    *newTestPlugin("Openclaw"),
 		handledRiskID: "logging_redact_off",
 	}
+	p.assets = []Asset{
+		{ID: "openclaw:abc123", Name: "Openclaw", SourcePlugin: "Openclaw"},
+	}
 	pm.Register(p)
+	if _, err := pm.ScanAllAssets(); err != nil {
+		t.Fatalf("ScanAllAssets failed: %v", err)
+	}
 
-	result := pm.MitigateRisk(`{"id":"logging_redact_off","source_plugin":"openclaw"}`)
+	result := pm.MitigateRisk(`{"id":"logging_redact_off","source_plugin":"openclaw","asset_id":"openclaw:abc123"}`)
 	if !strings.Contains(result, `"success":true`) {
-		t.Fatalf("expected mitigation routed by source_plugin, got: %s", result)
+		t.Fatalf("expected mitigation routed by asset_id, got: %s", result)
 	}
 }
 
