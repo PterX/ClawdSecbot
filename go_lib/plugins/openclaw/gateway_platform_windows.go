@@ -24,9 +24,6 @@ func restartOpenclawGateway(req *GatewayRestartRequest) (map[string]interface{},
 	logging.Info("[GatewayManager] === restartOpenclawGateway (Windows) called, asset=%s, assetID=%s, sandbox=%v ===",
 		req.AssetName, req.AssetID, req.SandboxEnabled)
 
-	for _, key := range buildGatewayRuntimeStateKeys(req.AssetName, req.AssetID) {
-		sandbox.StopHookLogWatcherByKey(key)
-	}
 	cleanupGatewayManagedRuntimeState(req.AssetName, req.AssetID)
 
 	var homeDir string
@@ -122,21 +119,9 @@ func restartWithSandbox(req *GatewayRestartRequest, binaryPath, homeDir string) 
 		return nil, fmt.Errorf("sandbox start failed: %w", err)
 	}
 
-	// Start hook log watcher to feed enforcement events into the security event pipeline
+	// Sandbox hook enforcement events are no longer harvested from the DLL audit log here.
+	// All security events are authored by the proxy decision sink (see _rules/security_event.md).
 	logPath := filepath.Join(logDir, fmt.Sprintf("botsec_%s_hook.log", sandbox.SanitizeAssetNamePublic(instanceKey)))
-	sandbox.StartHookLogWatcherByKey(instanceKey, logPath, func(event sandbox.HookLogEvent) {
-		eventType, actionDesc, riskType, source := sandbox.MapHookEventToSecurityEvent(event)
-		GetSecurityEventBuffer().AddSecurityEvent(SecurityEvent{
-			BotID:      req.AssetID,
-			EventType:  eventType,
-			ActionDesc: actionDesc,
-			RiskType:   riskType,
-			Source:     source,
-			Detail:     event.Detail,
-			AssetName:  req.AssetName,
-			AssetID:    req.AssetID,
-		})
-	})
 	logging.Info("[GatewayManager] Sandbox started: mode=windows_hook, managed_pid=%d, hook_log=%s, policy_dir=%s",
 		mgr.GetManagedPID(), logPath, policyDir)
 

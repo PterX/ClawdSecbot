@@ -13,12 +13,27 @@ abstract class BotsecTransport {
   String callRawOneArgOneInt(String method, String arg, int value);
   String callRawThreeInts(String method, int arg1, int arg2, int arg3);
 
+  /// 异步原始调用，默认退化为同步调用，仅由 FFI 传输重写为后台 isolate 执行，
+  /// 用于避免长耗时 FFI（如 LLM 连通性测试）阻塞 UI isolate。
+  Future<String> callRawOneArgAsync(String method, String arg) async {
+    return callRawOneArg(method, arg);
+  }
+
   Map<String, dynamic> callNoArg(String method) {
     return _decodeEnvelope(callRawNoArg(method), method);
   }
 
   Map<String, dynamic> callOneArg(String method, String arg) {
     return _decodeEnvelope(callRawOneArg(method, arg), method);
+  }
+
+  /// 异步封装调用：在后台 isolate 执行原始 FFI 后再解析 JSON 包络。
+  Future<Map<String, dynamic>> callOneArgAsync(
+    String method,
+    String arg,
+  ) async {
+    final raw = await callRawOneArgAsync(method, arg);
+    return _decodeEnvelope(raw, method);
   }
 
   Map<String, dynamic> callTwoArgs(String method, String arg1, String arg2) {

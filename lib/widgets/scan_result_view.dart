@@ -323,7 +323,8 @@ class ScanResultView extends StatelessWidget {
                     child: _buildRescanMenuItem(
                       text: l10n.rescanSecurityDiscovery,
                       selected:
-                          selectedRescanAction == RescanAction.securityDiscovery,
+                          selectedRescanAction ==
+                          RescanAction.securityDiscovery,
                     ),
                   ),
                   PopupMenuItem<RescanAction>(
@@ -570,7 +571,7 @@ class ScanResultView extends StatelessWidget {
         return l10n.riskSkillsNotScanned;
       case 'openclaw_1click_rce_vulnerability':
       case 'nullclaw_1click_rce_vulnerability':
-        return l10n.riskOneClickRce;
+        return risk.displayTitle(l10n.localeName);
       case 'openclaw_insecure_or_dangerous_flags':
         return l10n.riskOpenclawInsecureOrDangerousFlags;
       case 'openclaw_config_patch_outdated':
@@ -683,9 +684,7 @@ class ScanResultView extends StatelessWidget {
         );
       case 'openclaw_1click_rce_vulnerability':
       case 'nullclaw_1click_rce_vulnerability':
-        return l10n.riskOneClickRceDesc(
-          risk.args?['current_version']?.toString() ?? 'unknown',
-        );
+        return risk.displayDescription(l10n.localeName);
       case 'openclaw_insecure_or_dangerous_flags':
         return l10n.riskOpenclawInsecureOrDangerousFlagsDesc;
       case 'openclaw_config_patch_outdated':
@@ -805,9 +804,7 @@ class ScanResultView extends StatelessWidget {
   }
 
   String _getAssetDisplayName(String name) {
-    const displayNames = {
-      'dintalclaw': '政务龙虾',
-    };
+    const displayNames = {'dintalclaw': '政务龙虾'};
     return displayNames[name] ?? name;
   }
 }
@@ -941,8 +938,8 @@ class _AssetCardState extends State<_AssetCard> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          _getAssetDisplayName(asset.name),
+                        child: Text.rich(
+                          _buildAssetTitleSpan(asset),
                           style: AppFonts.inter(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -1014,12 +1011,6 @@ class _AssetCardState extends State<_AssetCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 12),
-                      if (asset.version.isNotEmpty)
-                        _buildConfigRow(
-                          l10n.version,
-                          asset.version,
-                          Colors.white70,
-                        ),
                       if (asset.serviceName.isNotEmpty)
                         _buildConfigRow(
                           l10n.serviceName,
@@ -1061,6 +1052,28 @@ class _AssetCardState extends State<_AssetCard> {
   String _getAssetDisplayName(String name) {
     const displayNames = {'dintalclaw': '政务龙虾'};
     return displayNames[name] ?? name;
+  }
+
+  InlineSpan _buildAssetTitleSpan(Asset asset) {
+    final displayName = _getAssetDisplayName(asset.name);
+    final version = asset.version.trim();
+    if (version.isEmpty) {
+      return TextSpan(text: displayName);
+    }
+    return TextSpan(
+      children: [
+        TextSpan(text: displayName),
+        TextSpan(
+          text: ' | ',
+          style: AppFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.white38,
+          ),
+        ),
+        TextSpan(text: version),
+      ],
+    );
   }
 
   /// 根据资产状态生成折叠态右上角类型徽章文案

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -54,6 +55,11 @@ var databaseVersionMigrations = []databaseVersionMigration{
 		fromVersion: "1.0.1",
 		toVersion:   "1.0.2",
 		run:         migrateDatabaseFrom1_0_1To1_0_2,
+	},
+	{
+		fromVersion: "1.0.2",
+		toVersion:   "1.0.3",
+		run:         migrateDatabaseFrom1_0_2To1_0_3,
 	},
 }
 
@@ -543,4 +549,409 @@ func migrateDatabaseFrom1_0_1To1_0_2(db *sql.DB) error {
 	logging.Info("Migrating audit_logs table: adding TruthRecord columns")
 	ensureAuditLogTruthRecordColumns(db)
 	return nil
+}
+
+// migrateDatabaseFrom1_0_2To1_0_3 rebuilds audit and risk-detection tables.
+// Decision:
+//  1. audit_logs: schema and semantics changed, keep no legacy rows.
+//  2. risk detection (scans/assets/risks/skill_scans): no stable 1:1 mapping
+//     for the new runtime semantics, so destructive rebuild is safer.
+func migrateDatabaseFrom1_0_2To1_0_3(db *sql.DB) error {
+	logging.Info("Migrating database 1.0.2 -> 1.0.3: rebuilding audit/risk tables and remapping asset_id")
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin migration transaction failed: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := migrateAssetIDFingerprintFrom1_0_2To1_0_3(tx); err != nil {
+		return fmt.Errorf("migrate asset_id fingerprint failed: %w", err)
+	}
+
+	// Drop child tables before parent tables to avoid FK-order issues.
+	tablesToDrop := []string{
+		"audit_logs",
+		"assets",
+		"risks",
+		"scans",
+		"skill_scans",
+	}
+	for _, tableName := range tablesToDrop {
+		if _, err := tx.Exec(fmt.Sprintf(
+			"DROP TABLE IF EXISTS %s",
+			quoteSQLiteIdentifier(tableName),
+		)); err != nil {
+			return fmt.Errorf("drop table %s failed: %w", tableName, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration transaction failed: %w", err)
+	}
+
+	return nil
+}
+
+type protectionConfigAssetIDMigration struct {
+	rowID      int64
+	oldAssetID string
+	newAssetID string
+}
+
+type assetIDMapping struct {
+	oldAssetID string
+	newAssetID string
+}
+
+func migrateAssetIDFingerprintFrom1_0_2To1_0_3(tx *sql.Tx) error {
+	migrations, err := collectProtectionConfigAssetIDMigrations(tx)
+	if err != nil {
+		return err
+	}
+	if len(migrations) == 0 {
+		return nil
+	}
+
+	if err := rewriteProtectionConfigAssetIDs(tx, migrations); err != nil {
+		return err
+	}
+
+	mappings := dedupeAssetIDMappings(migrations)
+	if err := rewriteProtectionStatisticsAssetIDs(tx, mappings); err != nil {
+		return err
+	}
+	if err := rewriteShepherdRulesAssetIDs(tx, mappings); err != nil {
+		return err
+	}
+	if err := rewriteTableAssetIDs(tx, "api_metrics", mappings); err != nil {
+		return err
+	}
+	if err := rewriteTableAssetIDs(tx, "security_events", mappings); err != nil {
+		return err
+	}
+
+	logging.Info("Migrated %d asset_id rows from runtime fingerprint to stable config_path fingerprint", len(migrations))
+	return nil
+}
+
+func collectProtectionConfigAssetIDMigrations(tx *sql.Tx) ([]protectionConfigAssetIDMigration, error) {
+	exists, err := tableExistsTx(tx, "protection_config")
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
+	}
+
+	rows, err := tx.Query(`
+		SELECT id, asset_id, asset_name, COALESCE(gateway_config_path, '')
+		FROM protection_config
+		WHERE asset_id <> ''
+		  AND asset_id <> ?
+	`, DefaultProtectionPolicyAssetID)
+	if err != nil {
+		return nil, fmt.Errorf("query protection_config for asset_id migration failed: %w", err)
+	}
+	defer rows.Close()
+
+	migrations := make([]protectionConfigAssetIDMigration, 0, 8)
+	for rows.Next() {
+		var (
+			rowID       int64
+			oldAssetID  string
+			assetName   string
+			gatewayPath string
+		)
+		if err := rows.Scan(&rowID, &oldAssetID, &assetName, &gatewayPath); err != nil {
+			return nil, fmt.Errorf("scan protection_config migration row failed: %w", err)
+		}
+
+		newAssetID := computeStableAssetIDForMigration(assetName, gatewayPath)
+		if newAssetID == "" || newAssetID == oldAssetID {
+			continue
+		}
+
+		migrations = append(migrations, protectionConfigAssetIDMigration{
+			rowID:      rowID,
+			oldAssetID: oldAssetID,
+			newAssetID: newAssetID,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate protection_config migration rows failed: %w", err)
+	}
+
+	return migrations, nil
+}
+
+func computeStableAssetIDForMigration(name, configPath string) string {
+	nameLower := strings.ToLower(strings.TrimSpace(name))
+	if nameLower == "" {
+		return ""
+	}
+
+	parts := []string{"name=" + nameLower}
+	configPath = strings.TrimSpace(configPath)
+	if configPath != "" {
+		parts = append(parts, "config="+configPath)
+	}
+
+	canonical := strings.Join(parts, "|")
+	hash := sha256.Sum256([]byte(canonical))
+	return fmt.Sprintf("%s:%x", nameLower, hash[:6])
+}
+
+func rewriteProtectionConfigAssetIDs(tx *sql.Tx, migrations []protectionConfigAssetIDMigration) error {
+	for _, migration := range migrations {
+		_, err := tx.Exec(`
+			UPDATE protection_config
+			SET asset_id = ?
+			WHERE id = ? AND asset_id = ?
+		`, migration.newAssetID, migration.rowID, migration.oldAssetID)
+		if err == nil {
+			continue
+		}
+		if isUniqueConstraintError(err) {
+			logging.Warning(
+				"asset_id migration conflict in protection_config, dropping duplicate row id=%d (%s -> %s)",
+				migration.rowID,
+				migration.oldAssetID,
+				migration.newAssetID,
+			)
+			if _, deleteErr := tx.Exec(`DELETE FROM protection_config WHERE id = ?`, migration.rowID); deleteErr != nil {
+				return fmt.Errorf(
+					"delete duplicate protection_config row id=%d after conflict (%s -> %s) failed: %w",
+					migration.rowID,
+					migration.oldAssetID,
+					migration.newAssetID,
+					deleteErr,
+				)
+			}
+			continue
+		}
+		return fmt.Errorf(
+			"update protection_config asset_id id=%d (%s -> %s) failed: %w",
+			migration.rowID,
+			migration.oldAssetID,
+			migration.newAssetID,
+			err,
+		)
+	}
+	return nil
+}
+
+func dedupeAssetIDMappings(migrations []protectionConfigAssetIDMigration) []assetIDMapping {
+	mappingByOld := make(map[string]string, len(migrations))
+	for _, migration := range migrations {
+		mappingByOld[migration.oldAssetID] = migration.newAssetID
+	}
+
+	mappings := make([]assetIDMapping, 0, len(mappingByOld))
+	for oldAssetID, newAssetID := range mappingByOld {
+		mappings = append(mappings, assetIDMapping{
+			oldAssetID: oldAssetID,
+			newAssetID: newAssetID,
+		})
+	}
+	return mappings
+}
+
+func rewriteProtectionStatisticsAssetIDs(tx *sql.Tx, mappings []assetIDMapping) error {
+	exists, err := tableExistsTx(tx, "protection_statistics")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+
+	for _, mapping := range mappings {
+		if mapping.oldAssetID == mapping.newAssetID {
+			continue
+		}
+		_, err := tx.Exec(
+			`UPDATE protection_statistics SET asset_id = ? WHERE asset_id = ?`,
+			mapping.newAssetID,
+			mapping.oldAssetID,
+		)
+		if err == nil {
+			continue
+		}
+		if !isUniqueConstraintError(err) {
+			return fmt.Errorf(
+				"update protection_statistics asset_id (%s -> %s) failed: %w",
+				mapping.oldAssetID,
+				mapping.newAssetID,
+				err,
+			)
+		}
+
+		// Merge duplicate statistics rows into the stable asset_id row.
+		if _, err := tx.Exec(`
+			INSERT INTO protection_statistics (
+				asset_name, asset_id, analysis_count, message_count, warning_count, blocked_count,
+				total_tokens, total_prompt_tokens, total_completion_tokens, total_tool_calls,
+				request_count, audit_tokens, audit_prompt_tokens, audit_completion_tokens, updated_at
+			)
+			SELECT
+				asset_name, ?, analysis_count, message_count, warning_count, blocked_count,
+				total_tokens, total_prompt_tokens, total_completion_tokens, total_tool_calls,
+				request_count, audit_tokens, audit_prompt_tokens, audit_completion_tokens, updated_at
+			FROM protection_statistics
+			WHERE asset_id = ?
+			ON CONFLICT(asset_id) DO UPDATE SET
+				analysis_count = protection_statistics.analysis_count + excluded.analysis_count,
+				message_count = protection_statistics.message_count + excluded.message_count,
+				warning_count = protection_statistics.warning_count + excluded.warning_count,
+				blocked_count = protection_statistics.blocked_count + excluded.blocked_count,
+				total_tokens = protection_statistics.total_tokens + excluded.total_tokens,
+				total_prompt_tokens = protection_statistics.total_prompt_tokens + excluded.total_prompt_tokens,
+				total_completion_tokens = protection_statistics.total_completion_tokens + excluded.total_completion_tokens,
+				total_tool_calls = protection_statistics.total_tool_calls + excluded.total_tool_calls,
+				request_count = protection_statistics.request_count + excluded.request_count,
+				audit_tokens = protection_statistics.audit_tokens + excluded.audit_tokens,
+				audit_prompt_tokens = protection_statistics.audit_prompt_tokens + excluded.audit_prompt_tokens,
+				audit_completion_tokens = protection_statistics.audit_completion_tokens + excluded.audit_completion_tokens,
+				updated_at = CASE
+					WHEN excluded.updated_at > protection_statistics.updated_at THEN excluded.updated_at
+					ELSE protection_statistics.updated_at
+				END
+		`, mapping.newAssetID, mapping.oldAssetID); err != nil {
+			return fmt.Errorf(
+				"merge protection_statistics asset_id (%s -> %s) failed: %w",
+				mapping.oldAssetID,
+				mapping.newAssetID,
+				err,
+			)
+		}
+		if _, err := tx.Exec(`DELETE FROM protection_statistics WHERE asset_id = ?`, mapping.oldAssetID); err != nil {
+			return fmt.Errorf(
+				"cleanup old protection_statistics asset_id %s failed: %w",
+				mapping.oldAssetID,
+				err,
+			)
+		}
+	}
+	return nil
+}
+
+func rewriteShepherdRulesAssetIDs(tx *sql.Tx, mappings []assetIDMapping) error {
+	exists, err := tableExistsTx(tx, "shepherd_rules")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+
+	for _, mapping := range mappings {
+		if mapping.oldAssetID == mapping.newAssetID {
+			continue
+		}
+		_, err := tx.Exec(
+			`UPDATE shepherd_rules SET asset_id = ? WHERE asset_id = ?`,
+			mapping.newAssetID,
+			mapping.oldAssetID,
+		)
+		if err == nil {
+			continue
+		}
+		if !isUniqueConstraintError(err) {
+			return fmt.Errorf(
+				"update shepherd_rules asset_id (%s -> %s) failed: %w",
+				mapping.oldAssetID,
+				mapping.newAssetID,
+				err,
+			)
+		}
+
+		// Keep the latest rules payload when both IDs exist.
+		if _, err := tx.Exec(`
+			INSERT INTO shepherd_rules (asset_id, asset_name, sensitive_actions, updated_at)
+			SELECT ?, asset_name, sensitive_actions, updated_at
+			FROM shepherd_rules
+			WHERE asset_id = ?
+			ON CONFLICT(asset_id) DO UPDATE SET
+				asset_name = CASE
+					WHEN excluded.updated_at >= shepherd_rules.updated_at THEN excluded.asset_name
+					ELSE shepherd_rules.asset_name
+				END,
+				sensitive_actions = CASE
+					WHEN excluded.updated_at >= shepherd_rules.updated_at THEN excluded.sensitive_actions
+					ELSE shepherd_rules.sensitive_actions
+				END,
+				updated_at = CASE
+					WHEN excluded.updated_at >= shepherd_rules.updated_at THEN excluded.updated_at
+					ELSE shepherd_rules.updated_at
+				END
+		`, mapping.newAssetID, mapping.oldAssetID); err != nil {
+			return fmt.Errorf(
+				"merge shepherd_rules asset_id (%s -> %s) failed: %w",
+				mapping.oldAssetID,
+				mapping.newAssetID,
+				err,
+			)
+		}
+		if _, err := tx.Exec(`DELETE FROM shepherd_rules WHERE asset_id = ?`, mapping.oldAssetID); err != nil {
+			return fmt.Errorf(
+				"cleanup old shepherd_rules asset_id %s failed: %w",
+				mapping.oldAssetID,
+				err,
+			)
+		}
+	}
+	return nil
+}
+
+func rewriteTableAssetIDs(tx *sql.Tx, tableName string, mappings []assetIDMapping) error {
+	exists, err := tableExistsTx(tx, tableName)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+
+	for _, mapping := range mappings {
+		if mapping.oldAssetID == mapping.newAssetID {
+			continue
+		}
+		if _, err := tx.Exec(
+			fmt.Sprintf(`UPDATE %s SET asset_id = ? WHERE asset_id = ?`, quoteSQLiteIdentifier(tableName)),
+			mapping.newAssetID,
+			mapping.oldAssetID,
+		); err != nil {
+			return fmt.Errorf(
+				"update %s asset_id (%s -> %s) failed: %w",
+				tableName,
+				mapping.oldAssetID,
+				mapping.newAssetID,
+				err,
+			)
+		}
+	}
+	return nil
+}
+
+func tableExistsTx(tx *sql.Tx, tableName string) (bool, error) {
+	var count int
+	if err := tx.QueryRow(`
+		SELECT COUNT(1)
+		FROM sqlite_master
+		WHERE type = 'table'
+		  AND name = ?
+	`, tableName).Scan(&count); err != nil {
+		return false, fmt.Errorf("check table %s existence failed: %w", tableName, err)
+	}
+	return count > 0, nil
+}
+
+func isUniqueConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique constraint failed") ||
+		strings.Contains(msg, "primary key constraint failed")
 }

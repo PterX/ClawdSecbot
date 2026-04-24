@@ -777,6 +777,24 @@ func (pp *ProxyProtection) emitMonitorSecurityDecision(status, reason string, bl
 	})
 }
 
+// emitSecurityEvent persists a SecurityEvent for the protection monitor's event panel.
+// Must be co-located with any proxy-level interception (blockedCount++, quota/sandbox
+// block) so the "intercept count" and "event list" remain monotonically consistent.
+// Source is fixed to "react_agent" to align with the existing UI badge taxonomy.
+// Fail-open: persistence failures inside AddSecurityEvent must not block the proxy flow.
+func (pp *ProxyProtection) emitSecurityEvent(requestID, eventType, actionDesc, riskType, detail string) {
+	shepherd.GetSecurityEventBuffer().AddSecurityEvent(shepherd.SecurityEvent{
+		EventType:  eventType,
+		ActionDesc: actionDesc,
+		RiskType:   riskType,
+		Detail:     detail,
+		Source:     "react_agent",
+		AssetName:  pp.assetName,
+		AssetID:    pp.assetID,
+		RequestID:  requestID,
+	})
+}
+
 func (pp *ProxyProtection) emitMonitorResponseReturned(status, returnedText, returnedRaw string) {
 	pp.sendLog("monitor_response_returned", map[string]interface{}{
 		"status":                status,

@@ -1181,6 +1181,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get tokenUnitM => '百万';
 
   @override
+  String get tokenUnitBase => '个';
+
+  @override
   String get tokenPresetLabel => '快捷选择';
 
   @override
@@ -1974,6 +1977,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get eventOther => '其他事件';
+
+  @override
+  String get eventTypeWarning => '告警';
+
+  @override
+  String get riskTypeQuota => '配额限制';
+
+  @override
+  String get riskTypeSandboxBlocked => '沙箱拦截';
+
+  @override
+  String get riskTypeNeedsConfirmation => '待确认';
 
   @override
   String get eventTime => '时间';

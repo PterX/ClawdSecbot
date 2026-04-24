@@ -354,8 +354,6 @@ func restartDintalclawProcess(req *GatewayRestartRequest) (map[string]interface{
 					preloadLib, policyPath, sandboxLogPath)
 			}
 		}
-	} else {
-		sandbox.StopHookLogWatcherByKey(instanceKey)
 	}
 
 	stdinR, stdinW, pipeErr := os.Pipe()
@@ -388,21 +386,8 @@ func restartDintalclawProcess(req *GatewayRestartRequest) (map[string]interface{
 
 	time.Sleep(2 * time.Second)
 
-	// 启动 sandbox 日志监控
-	if req.SandboxEnabled && sandboxLogPath != "" {
-		sandbox.StartHookLogWatcherByKey(instanceKey, sandboxLogPath, func(event sandbox.HookLogEvent) {
-			eventType, actionDesc, riskType, source := sandbox.MapHookEventToSecurityEvent(event)
-			GetSecurityEventBuffer().AddSecurityEvent(SecurityEvent{
-				EventType:  eventType,
-				ActionDesc: actionDesc,
-				RiskType:   riskType,
-				Source:     source,
-				Detail:     event.Detail,
-				AssetName:  req.AssetName,
-				AssetID:    req.AssetID,
-			})
-		})
-	}
+	// Sandbox hook audit log is no longer harvested into SecurityEvents here.
+	// Proxy decision sink is the sole authoritative source (see _rules/security_event.md).
 
 	result := map[string]interface{}{
 		"success": true,
