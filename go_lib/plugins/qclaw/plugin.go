@@ -89,14 +89,14 @@ func (p *Plugin) ScanAssets() ([]core.Asset, error) {
 	return newAssetScanner(filepath.Dir(configPath)).scan()
 }
 
-func (p *Plugin) AssessRisks(scannedHashes map[string]bool) ([]core.Risk, error) {
+func (p *Plugin) AssessRisks(scannedHashes map[string]bool, assets []core.Asset) ([]core.Risk, error) {
 	restoreOverrides, err := withOpenclawOverrides()
 	if err != nil {
 		return nil, err
 	}
 	defer restoreOverrides()
 
-	risks, err := openclawplugin.GetOpenclawPlugin().AssessRisks(scannedHashes)
+	risks, err := openclawplugin.GetOpenclawPlugin().AssessRisks(scannedHashes, assets)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +119,24 @@ func (p *Plugin) MitigateRisk(riskInfo string) string {
 	}
 	defer restoreOverrides()
 	return openclawplugin.GetOpenclawPlugin().MitigateRisk(riskInfo)
+}
+
+func (p *Plugin) GetVulnInfoJSON() []byte {
+	restoreOverrides, err := withOpenclawOverrides()
+	if err != nil {
+		return []byte("{}")
+	}
+	defer restoreOverrides()
+	return openclawplugin.GetOpenclawPlugin().GetVulnInfoJSON()
+}
+
+func (p *Plugin) CompareVulnerabilityVersion(current, target string) (int, bool) {
+	restoreOverrides, err := withOpenclawOverrides()
+	if err != nil {
+		return 0, false
+	}
+	defer restoreOverrides()
+	return openclawplugin.GetOpenclawPlugin().CompareVulnerabilityVersion(current, target)
 }
 
 func (p *Plugin) StartProtection(assetID string, cfg core.ProtectionConfig) error {

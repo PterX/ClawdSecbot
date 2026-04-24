@@ -330,7 +330,8 @@ func (pm *PluginManager) AssessRisksByPlugin(assetName string, scannedHashes map
 
 	pluginAssetName := plugin.GetAssetName()
 	logging.Info("Assessing risks with single plugin: %s", pluginAssetName)
-	risks, err := plugin.AssessRisks(scannedHashes)
+	pluginAssets := pm.getAssetsByPlugin(pluginAssetName)
+	risks, err := plugin.AssessRisks(scannedHashes, pluginAssets)
 	if err != nil {
 		return nil, err
 	}

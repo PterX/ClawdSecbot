@@ -10,6 +10,9 @@ import '../models/risk_model.dart';
 import 'plugin_service.dart';
 import 'scan_database_service.dart';
 
+/// Three security-discovery stages used by the rescan progress UI.
+enum SecurityDiscoveryStage { baseline, vulnerability, skillPoison }
+
 class BotScanner {
   final StreamController<String> _logController =
       StreamController<String>.broadcast();
@@ -53,36 +56,136 @@ class BotScanner {
     );
   }
 
+  /// Re-runs the "Security Discovery" flow and reports real-time progress.
+  /// [onAssetsUpdated] streams the actually discovered assets during rescanning.
+  /// [onStageProgress] reports stage start and completion per asset.
   Future<ScanResult> rediscoverSecurityFindings({
     required bool configFound,
     String? configPath,
     Map<String, dynamic>? config,
+    void Function(List<Asset> assets)? onAssetsUpdated,
+    void Function(String assetID, SecurityDiscoveryStage stage, bool completed)?
+    onStageProgress,
   }) async {
     _log('Refreshing security findings...');
     await Future.delayed(const Duration(milliseconds: 150));
 
-    // Re-scan assets per plugin so we skip risk assessment for plugins
-    // whose assets are absent, avoiding stale/irrelevant risks in UI.
-    final pluginResult = await _runPluginPipeline();
-    final baseRisks = List<RiskInfo>.from(pluginResult.riskInfo);
-    _log('Found ${baseRisks.length} potential issues.');
+    final pluginOrder = [
+      'openclaw',
+      'dintalclaw',
+      'nullclaw',
+      'qclaw',
+      'hermes',
+    ];
+    final registeredPlugins = await _pluginService.getRegisteredPlugins();
+    final registeredNames = registeredPlugins
+        .map(
+          (item) => (item['asset_name'] as String? ?? '').trim().toLowerCase(),
+        )
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    final activePlugins = pluginOrder
+        .where(registeredNames.contains)
+        .toList(growable: false);
 
+    final stageAssets = <Asset>[];
+    final stageAssetIndexByID = <String, int>{};
+    final assetsByPlugin = <String, List<Asset>>{};
+    final allRisks = <RiskInfo>[];
+    final scannedHashes = await _pluginService.getScannedSkillHashesList();
+
+    void emitAssets(List<Asset> assets) {
+      if (onAssetsUpdated == null) {
+        return;
+      }
+      onAssetsUpdated(List<Asset>.unmodifiable(assets));
+    }
+
+    void upsertStageAssets(Iterable<Asset> assets) {
+      var changed = false;
+      for (final asset in assets) {
+        final existingIndex = stageAssetIndexByID[asset.id];
+        if (existingIndex == null) {
+          stageAssetIndexByID[asset.id] = stageAssets.length;
+          stageAssets.add(asset);
+          changed = true;
+          continue;
+        }
+        if (stageAssets[existingIndex] != asset) {
+          stageAssets[existingIndex] = asset;
+          changed = true;
+        }
+      }
+      if (changed) {
+        emitAssets(stageAssets);
+      }
+    }
+
+    void markStage(
+      Iterable<Asset> assets,
+      SecurityDiscoveryStage stage,
+      bool completed,
+    ) {
+      for (final asset in assets) {
+        onStageProgress?.call(asset.id, stage, completed);
+      }
+    }
+
+    for (final assetName in activePlugins) {
+      final assets = await _pluginService.scanAssetsByPlugin(assetName);
+      assetsByPlugin[assetName] = assets;
+      _log('Plugin $assetName found ${assets.length} assets.');
+      if (assets.isEmpty) {
+        continue;
+      }
+
+      upsertStageAssets(assets);
+      markStage(assets, SecurityDiscoveryStage.baseline, false);
+      markStage(assets, SecurityDiscoveryStage.baseline, true);
+      markStage(assets, SecurityDiscoveryStage.vulnerability, false);
+
+      final risks = await _pluginService.assessRisksByPlugin(
+        assetName,
+        scannedHashes,
+      );
+      allRisks.addAll(risks);
+      markStage(assets, SecurityDiscoveryStage.vulnerability, true);
+      markStage(assets, SecurityDiscoveryStage.skillPoison, false);
+    }
+
+    final baseRisks = List<RiskInfo>.from(allRisks);
+    _log('Found ${baseRisks.length} potential issues.');
     _checkSystemRisks(baseRisks);
-    final skillRisks = await _loadRiskySkills(pluginResult.risks);
+
+    final skillRisks = await _loadRiskySkills(allRisks);
+    markStage(stageAssets, SecurityDiscoveryStage.skillPoison, true);
+
+    final discoveredAssets = <Asset>[
+      for (final plugin in activePlugins) ...?assetsByPlugin[plugin],
+    ];
 
     return ScanResult(
-      config: pluginResult.config ?? config,
+      config: config,
       riskInfo: baseRisks,
       skillResult: skillRisks,
-      configFound: pluginResult.configFound || configFound,
-      configPath: pluginResult.configPath ?? configPath,
-      assets: pluginResult.assets,
+      configFound: discoveredAssets.isNotEmpty || configFound,
+      configPath: _resolveConfigPath(discoveredAssets) ?? configPath,
+      assets: discoveredAssets,
       scannedAt: DateTime.now(),
     );
   }
 
-  /// 按插件逐个扫描资产并评估风险：仅当插件检测到资产时才评估其风险，
-  /// 避免无资产插件返回历史/默认风险污染结果。
+  String? _resolveConfigPath(List<Asset> assets) {
+    final configPath = assets
+        .map((asset) => asset.metadata['config_path'] ?? '')
+        .firstWhere(
+          (path) => path.toString().trim().isNotEmpty,
+          orElse: () => '',
+        );
+    return configPath.toString().isEmpty ? null : configPath.toString();
+  }
+
+  /// Scans assets plugin by plugin and only assesses risks for detected assets.
   Future<ScanResult> _runPluginPipeline({
     void Function(String assetName, bool detected)? onPluginScanned,
   }) async {
@@ -214,7 +317,7 @@ class BotScanner {
                       normalizedIssueCount,
                     )
                   : (_l10n!.localeName.startsWith('zh')
-                        ? '技能 "$skillName" 存在安全风险。建议删除此技能。'
+                        ? '技能"$skillName"存在安全风险。建议删除此技能。'
                         : 'Skill "$skillName" is risky. Consider deleting it.'))
             : (normalizedIssueCount > 0
                   ? 'Skill "$skillName" has $normalizedIssueCount security issue(s): ${issues.join("; ")}'
@@ -250,7 +353,7 @@ class BotScanner {
     return risks;
   }
 
-  /// 按 skill_path 去重并合并问题，避免风险技能重复展示。
+  /// Deduplicates risky-skill records by skill path for stable UI rendering.
   List<Map<String, dynamic>> _mergeRiskySkillsByPath(
     List<Map<String, dynamic>> riskySkills,
   ) {
@@ -316,3 +419,4 @@ class BotScanner {
     _logController.close();
   }
 }
+
