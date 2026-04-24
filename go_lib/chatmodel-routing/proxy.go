@@ -110,6 +110,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		if result != nil && len(result.ForwardBody) > 0 {
+			reqBody = result.ForwardBody
+			logging.Info("[Proxy] Request body rewritten by filter before upstream forwarding")
+		}
 	}
 
 	// Log upstream attempt (approximate)

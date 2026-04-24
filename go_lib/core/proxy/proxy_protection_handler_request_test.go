@@ -74,6 +74,61 @@ func TestCollectTailToolResults_LastMessageNotToolReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestAnalyzeRequestProtocol_StandardToolResultRound(t *testing.T) {
+	req, _ := mustParseChatRequest(t, `{
+	  "model":"gpt-test",
+	  "messages":[
+	    {"role":"user","content":"run command"},
+	    {"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"exec","arguments":"{\"command\":\"echo 1\"}"}}]},
+	    {"role":"tool","tool_call_id":"call_1","content":"1"}
+	  ]
+	}`)
+
+	got := analyzeRequestProtocol("req_standard", req.Messages)
+	if got.IsInlineToolProtocol {
+		t.Fatalf("expected standard protocol, got inline")
+	}
+	if got.LatestAssistantIndex != 1 {
+		t.Fatalf("expected latest assistant index 1, got %d", got.LatestAssistantIndex)
+	}
+	if len(got.LatestAssistantToolCall) != 1 || got.LatestAssistantToolCall[0].ID != "call_1" {
+		t.Fatalf("expected latest call_1, got %+v", got.LatestAssistantToolCall)
+	}
+	if !got.LatestRoundToolCallIDs["call_1"] {
+		t.Fatalf("expected call_1 to be marked latest round")
+	}
+}
+
+func TestAnalyzeRequestProtocol_InlineToolUseAndResult(t *testing.T) {
+	req, _ := mustParseChatRequest(t, `{
+	  "model":"gpt-test",
+	  "messages":[
+	    {"role":"user","content":"=== ASSISTANT ===\n<tool_use>{\"name\":\"shell\",\"arguments\":{\"command\":\"pwd\"}}</tool_use>\n=== USER ===\n<tool_result>/tmp</tool_result>"}
+	  ]
+	}`)
+
+	got := analyzeRequestProtocol("req_inline", req.Messages)
+	if !got.IsInlineToolProtocol {
+		t.Fatalf("expected inline protocol")
+	}
+	if !got.HasToolResultMessages {
+		t.Fatalf("expected inline tool result to be detected")
+	}
+	if len(got.LatestAssistantToolCall) != 1 {
+		t.Fatalf("expected one inline tool call, got %d", len(got.LatestAssistantToolCall))
+	}
+	tc := got.LatestAssistantToolCall[0]
+	if tc.FuncName != "shell" {
+		t.Fatalf("expected shell tool, got %q", tc.FuncName)
+	}
+	if strings.TrimSpace(got.InlineToolResults[tc.ID]) != "/tmp" {
+		t.Fatalf("expected inline result /tmp, got %+v", got.InlineToolResults)
+	}
+	if !got.LatestRoundToolCallIDs[tc.ID] {
+		t.Fatalf("expected inline tool call to be latest round")
+	}
+}
+
 func TestExtractCurrentRoundRecordMessages_UsesTailToolBlock(t *testing.T) {
 	req, _ := mustParseChatRequest(t, `{
 	  "model":"gpt-test",
@@ -174,6 +229,45 @@ func TestOnRequest_QuotaBlockKeepsAuditRequestAndAssistantMessage(t *testing.T) 
 	}
 	if !foundAssistant {
 		t.Fatalf("expected assistant quota message in truth record")
+	}
+}
+
+func TestOnRequest_DailyQuotaBlockUsesRequestPolicyDecision(t *testing.T) {
+	pp := &ProxyProtection{
+		records:                NewRecordStore(),
+		dailyTokenLimit:        100,
+		initialDailyUsage:      90,
+		totalTokens:            20,
+		baselineTotalTokens:    0,
+		lastRecentMessageCount: 0,
+	}
+
+	req, rawBody := mustParseChatRequest(t, `{
+	  "model":"gpt-test",
+	  "stream":false,
+	  "messages":[
+	    {"role":"user","content":"请总结今天的审计事件"}
+	  ]
+	}`)
+
+	result, passed := pp.onRequest(context.Background(), req, rawBody)
+	if passed {
+		t.Fatalf("expected request to be blocked by daily quota")
+	}
+	if result == nil || !strings.Contains(result.MockContent, "QUOTA_EXCEEDED") {
+		t.Fatalf("expected quota mock content, got %+v", result)
+	}
+
+	completed := pp.records.GetCompletedRecords(10, 0, false)
+	if len(completed) != 1 {
+		t.Fatalf("expected 1 completed truth record, got %d", len(completed))
+	}
+	record := completed[0]
+	if record.DailyTokens != 110 {
+		t.Fatalf("expected daily tokens 110, got %d", record.DailyTokens)
+	}
+	if record.Decision == nil || record.Decision.RiskLevel != "QUOTA" || record.Decision.Action != "BLOCK" {
+		t.Fatalf("expected quota block decision, got %+v", record.Decision)
 	}
 }
 

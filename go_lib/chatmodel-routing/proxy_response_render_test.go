@@ -8,12 +8,36 @@ import (
 	"strings"
 	"testing"
 
+	"go_lib/chatmodel-routing/adapter"
+
 	"github.com/openai/openai-go"
 )
 
 type testStream struct {
 	chunks []*openai.ChatCompletionChunk
 	index  int
+}
+
+type bodyCaptureProvider struct {
+	body []byte
+}
+
+func (p *bodyCaptureProvider) ChatCompletion(ctx context.Context, req *openai.ChatCompletionNewParams) (*openai.ChatCompletion, error) {
+	return nil, nil
+}
+
+func (p *bodyCaptureProvider) ChatCompletionRaw(ctx context.Context, body []byte) (*openai.ChatCompletion, error) {
+	p.body = append([]byte(nil), body...)
+	return &openai.ChatCompletion{}, nil
+}
+
+func (p *bodyCaptureProvider) ChatCompletionStream(ctx context.Context, req *openai.ChatCompletionNewParams) (adapter.Stream, error) {
+	return nil, nil
+}
+
+func (p *bodyCaptureProvider) ChatCompletionStreamRaw(ctx context.Context, body []byte) (adapter.Stream, error) {
+	p.body = append([]byte(nil), body...)
+	return &testStream{}, nil
 }
 
 func (s *testStream) Recv() (*openai.ChatCompletionChunk, error) {
@@ -27,6 +51,37 @@ func (s *testStream) Recv() (*openai.ChatCompletionChunk, error) {
 
 func (s *testStream) Close() error {
 	return nil
+}
+
+func TestServeHTTP_UsesForwardBodyFromFilter(t *testing.T) {
+	originalBody := `{"model":"gpt-test","messages":[{"role":"user","content":"secret"}]}`
+	forwardBody := []byte(`{"model":"gpt-test","messages":[{"role":"user","content":"redacted"}]}`)
+	provider := &bodyCaptureProvider{}
+	filter := NewCallbackFilter(
+		func(ctx context.Context, req *openai.ChatCompletionNewParams, rawBody []byte) (*FilterRequestResult, bool) {
+			if !strings.Contains(string(rawBody), "secret") {
+				t.Fatalf("expected filter to see original body, got %s", string(rawBody))
+			}
+			return &FilterRequestResult{ForwardBody: forwardBody}, true
+		},
+		nil,
+		nil,
+	)
+	p, err := NewProxy(provider, filter)
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(originalBody))
+	rr := httptest.NewRecorder()
+	p.ServeHTTP(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("expected status 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := string(provider.body); got != string(forwardBody) {
+		t.Fatalf("expected provider to receive rewritten body %s, got %s", string(forwardBody), got)
+	}
 }
 
 func TestServeNonStreamResponse_RewritesRawToolCallIDWithMutatedResponse(t *testing.T) {
