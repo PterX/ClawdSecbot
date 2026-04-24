@@ -572,6 +572,10 @@ class ScanResultView extends StatelessWidget {
       case 'openclaw_1click_rce_vulnerability':
       case 'nullclaw_1click_rce_vulnerability':
         return risk.displayTitle(l10n.localeName);
+      case 'openclaw_insecure_or_dangerous_flags':
+        return l10n.riskOpenclawInsecureOrDangerousFlags;
+      case 'openclaw_config_patch_outdated':
+        return l10n.riskOpenclawConfigPatchOutdated;
       case 'terminal_backend_local':
         return l10n.riskTerminalBackendLocal;
       case 'approvals_mode_disabled':
@@ -681,6 +685,13 @@ class ScanResultView extends StatelessWidget {
       case 'openclaw_1click_rce_vulnerability':
       case 'nullclaw_1click_rce_vulnerability':
         return risk.displayDescription(l10n.localeName);
+      case 'openclaw_insecure_or_dangerous_flags':
+        return l10n.riskOpenclawInsecureOrDangerousFlagsDesc;
+      case 'openclaw_config_patch_outdated':
+        return l10n.riskOpenclawConfigPatchOutdatedDesc(
+          risk.args?['current_version']?.toString() ?? 'unknown',
+          risk.args?['required_version']?.toString() ?? 'unknown',
+        );
       case 'terminal_backend_local':
         return l10n.riskTerminalBackendLocalDesc;
       case 'approvals_mode_disabled':

@@ -255,12 +255,12 @@ func TestInitDBWithVersion_UpgradesFrom1_0_2To1_0_3_RebuildsAuditAndRiskTables(t
 
 		if _, err := db.Exec(`
 			INSERT INTO protection_config (
-				asset_name, asset_id, inherits_default_policy, enabled, audit_only, sandbox_enabled,
+				asset_name, asset_id, enabled, audit_only, sandbox_enabled,
 				gateway_binary_path, gateway_config_path, custom_security_prompt,
 				single_session_token_limit, daily_token_limit,
 				path_permission, network_permission, shell_permission, bot_model_config,
 				created_at, updated_at
-			) VALUES (?, ?, 0, 1, 0, 1, ?, ?, '', 100000, 5000000, '{}', '{}', '{}', '{}', ?, ?)
+			) VALUES (?, ?, 1, 0, 1, ?, ?, '', 100000, 5000000, '{}', '{}', '{}', '{}', ?, ?)
 		`,
 			assetName,
 			oldAssetID,

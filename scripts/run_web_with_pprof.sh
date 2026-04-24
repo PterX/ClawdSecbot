@@ -10,7 +10,7 @@
 #   BOTSEC_WEB_API_HOST=0.0.0.0
 #   BOTSEC_WORKSPACE_DIR_PREFIX=/opt/botsec/workspace
 #   BOTSEC_HOME_DIR=/home/botsec
-#   BOTSEC_CURRENT_VERSION=1.0.1
+#   BOTSEC_CURRENT_VERSION=1.0.3        # 默认从 pubspec.yaml 读取
 set -euo pipefail
 
 PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
@@ -35,12 +35,26 @@ default_workspace_prefix() {
     esac
 }
 
+default_current_version() {
+    local pubspec="$PROJECT_ROOT/pubspec.yaml"
+    if [[ -f "$pubspec" ]]; then
+        local raw
+        raw="$(awk -F': *' '/^version:[[:space:]]*/ {print $2; exit}' "$pubspec" | tr -d '\r' | xargs)"
+        if [[ -n "$raw" ]]; then
+            # Flutter version format: x.y.z+build; DB migration only needs semver core.
+            echo "${raw%%+*}"
+            return
+        fi
+    fi
+    echo "1.0.1"
+}
+
 PPROF_PORT="${1:-${BOTSEC_PPROF_PORT:-6060}}"
 API_PORT="${BOTSEC_WEB_API_PORT:-18080}"
 API_HOST="${BOTSEC_WEB_API_HOST:-0.0.0.0}"
 WORKSPACE_DIR_PREFIX="${BOTSEC_WORKSPACE_DIR_PREFIX:-$(default_workspace_prefix)}"
 HOME_DIR="${BOTSEC_HOME_DIR:-$HOME}"
-CURRENT_VERSION="${BOTSEC_CURRENT_VERSION:-1.0.1}"
+CURRENT_VERSION="${BOTSEC_CURRENT_VERSION:-$(default_current_version)}"
 WEB_STATIC_DIR="${BOTSEC_WEB_STATIC_DIR:-$PROJECT_ROOT/build/web}"
 
 BOTSEC_WEBD_PID=""
@@ -71,6 +85,7 @@ echo "  BotSecManager Web Debug (pprof mode)"
 echo "============================================"
 echo "pprof port:  $PPROF_PORT"
 echo "api+web:     $API_HOST:$API_PORT"
+echo "version:     $CURRENT_VERSION"
 echo ""
 
 if is_port_in_use "$API_PORT"; then

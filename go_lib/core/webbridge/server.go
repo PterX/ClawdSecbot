@@ -955,17 +955,17 @@ func (s *Server) dispatch(method string, req rpcRequest) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return proxy.GetAuditLogsInternal(limit, offset, riskOnlyFlag != 0), nil
+		return proxy.GetTruthRecordsInternal(limit, offset, riskOnlyFlag != 0), nil
 	case "GetPendingAuditLogs":
-		return proxy.GetPendingAuditLogsInternal(), nil
+		return proxy.GetPendingTruthRecordsInternal(), nil
 	case "ClearAuditLogs":
-		return proxy.ClearAuditLogsInternal(), nil
+		return proxy.ClearTruthRecordsInternal(), nil
 	case "ClearAuditLogsWithFilter":
 		v, err := arg(0)
 		if err != nil {
 			return "", err
 		}
-		return proxy.ClearAuditLogsWithFilterInternal(v), nil
+		return proxy.ClearTruthRecordsWithFilterInternal(v), nil
 
 	case "SyncGatewaySandbox":
 		return core.SyncGatewaySandboxByPlugin(""), nil

@@ -140,6 +140,16 @@
       "version": {"type": "String"}
     }
   },
+  "riskOpenclawInsecureOrDangerousFlags": "Insecure or Dangerous Gateway Flags Enabled",
+  "riskOpenclawInsecureOrDangerousFlagsDesc": "Detected OpenClaw gateway flags that weaken authentication or origin trust protections. Disable these flags unless you have a strict, verified threat-model exception.",
+  "riskOpenclawConfigPatchOutdated": "OpenClaw Config Security Patches Missing",
+  "riskOpenclawConfigPatchOutdatedDesc": "Current OpenClaw version ({currentVersion}) is missing published configuration-security fixes. Upgrade to version {requiredVersion} or later immediately.",
+  "@riskOpenclawConfigPatchOutdatedDesc": {
+    "placeholders": {
+      "currentVersion": {"type": "String"},
+      "requiredVersion": {"type": "String"}
+    }
+  },
 
   "riskSkillsNotScanned": "Skills Not Scanned for Prompt Injection",
   "riskSkillsNotScannedDesc": "{count} skill(s) have not been scanned for prompt injection risks: {skills}. Click to scan.",
@@ -1014,6 +1024,7 @@
   },
   "exitRestoreConfirm": "Restore and Exit",
   "exitRestoreExitOnly": "Exit Only",
+  "exitWithoutRestoreConfirm": "Exit Without Restoring",
   "exitRestoreInProgress": "Restoring the Bot's default service. Please wait...",
   "exitRestoreFailedTitle": "Restore Failed, Exit Cancelled",
   "exitRestoreFailedMessage": "The following assets could not be restored, so the app will stay open to avoid leaving the Bot unusable after exit:\n\n{details}",

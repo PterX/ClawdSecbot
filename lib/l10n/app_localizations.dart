@@ -656,6 +656,33 @@ abstract class AppLocalizations {
   /// **'OpenClaw存在严重的1-click RCE漏洞（CVSS 10.0），攻击者可通过诱导用户访问恶意网站完成远程代码执行。受影响版本：< 2026.1.24-1，当前版本：{version}。建议立即升级至最新版本。'**
   String riskOneClickRceDesc(String version);
 
+  /// No description provided for @riskOpenclawInsecureOrDangerousFlags.
+  ///
+  /// In zh, this message translates to:
+  /// **'网关启用了不安全或危险选项'**
+  String get riskOpenclawInsecureOrDangerousFlags;
+
+  /// No description provided for @riskOpenclawInsecureOrDangerousFlagsDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'检测到 OpenClaw 网关配置中启用了会削弱认证或来源信任保护的危险选项。除非有严格且已验证的威胁模型豁免，否则应立即关闭这些选项。'**
+  String get riskOpenclawInsecureOrDangerousFlagsDesc;
+
+  /// No description provided for @riskOpenclawConfigPatchOutdated.
+  ///
+  /// In zh, this message translates to:
+  /// **'OpenClaw 配置安全补丁缺失'**
+  String get riskOpenclawConfigPatchOutdated;
+
+  /// No description provided for @riskOpenclawConfigPatchOutdatedDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前 OpenClaw 版本（{currentVersion}）缺少已发布的配置安全修复。请立即升级到 {requiredVersion} 或更高版本。'**
+  String riskOpenclawConfigPatchOutdatedDesc(
+    String currentVersion,
+    String requiredVersion,
+  );
+
   /// No description provided for @riskSkillsNotScanned.
   ///
   /// In zh, this message translates to:
@@ -3309,6 +3336,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'仅退出'**
   String get exitRestoreExitOnly;
+
+  /// No description provided for @exitWithoutRestoreConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'不恢复直接退出'**
+  String get exitWithoutRestoreConfirm;
 
   /// No description provided for @exitRestoreInProgress.
   ///

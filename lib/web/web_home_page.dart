@@ -54,7 +54,7 @@ const _defaultHomeDir = String.fromEnvironment(
 );
 const _defaultCurrentVersion = String.fromEnvironment(
   'BOTSEC_CURRENT_VERSION',
-  defaultValue: '1.0.3',
+  defaultValue: '',
 );
 
 class WebHomePage extends StatefulWidget {
@@ -155,7 +155,7 @@ class _WebHomePageState extends State<WebHomePage> {
     });
 
     _setupTransport(resetBootstrapped: true);
-    unawaited(_bootstrap(auto: true));
+    unawaited(_bootstrapAfterVersionResolved());
   }
 
   @override
@@ -174,6 +174,30 @@ class _WebHomePageState extends State<WebHomePage> {
     _currentVersionCtrl.dispose();
     _localeNotifier.dispose();
     super.dispose();
+  }
+
+  Future<void> _bootstrapAfterVersionResolved() async {
+    await _ensureCurrentVersion();
+    if (!mounted) return;
+    await _bootstrap(auto: true);
+  }
+
+  Future<void> _ensureCurrentVersion() async {
+    if (_currentVersionCtrl.text.trim().isNotEmpty) {
+      return;
+    }
+
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final version = info.version.trim();
+      if (version.isNotEmpty) {
+        _currentVersionCtrl.text = version;
+      }
+    } catch (e) {
+      appLogger.warning(
+        '[WebHome] Failed to resolve current version from package info: $e',
+      );
+    }
   }
 
   String _resolveDefaultApiBaseUrl() {

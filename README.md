@@ -265,23 +265,6 @@ Download `ClawdSecbot-*.exe` from [Releases](../../releases), run it, choose an 
 >
 > ClawSecbot modifies the `openclaw.json` configuration file during runtime. Restoring the initial configuration before uninstallation ensures that your Openclaw will continue to function normally without ClawSecbot.
 
-Cross-platform cleanup scripts are available to remove installation files, runtime data, logs, sandbox policies, cache files, and shortcuts:
-
-- **macOS/Linux**
-  ```bash
-  chmod +x ./scripts/uninstall/uninstall_unix.sh
-  ./scripts/uninstall/uninstall_unix.sh --dry-run
-  ./scripts/uninstall/uninstall_unix.sh --force
-  ```
-
-- **Windows**
-  ```powershell
-  powershell -ExecutionPolicy Bypass -File .\scripts\uninstall\uninstall_windows.ps1 -DryRun
-  powershell -ExecutionPolicy Bypass -File .\scripts\uninstall\uninstall_windows.ps1 -Force
-  ```
-
-For detailed cleanup scope and options (Chinese), see [`mds/uninstall_guide_zh-CN.md`](mds/uninstall_guide_zh-CN.md).
-
 ## Module Overview
 
 ### Core (`go_lib/core/`)
@@ -348,7 +331,7 @@ Plugins auto-register via `init()` and are managed through the `PluginManager`. 
 - **Auto-registration with duplicate detection** — Plugins register themselves in `init()`, skipped if already registered
 - **Multi-instance asset support** — Protection methods accept `assetID` for per-instance state management
 - **Lifecycle hooks** — `ProtectionLifecycleHooks` interface for pre-start/post-stop customization
-- **Risk mitigation routing** — Mitigation requests are routed by `asset_id` to the bound plugin instance
+- **Risk mitigation routing** — Risks are automatically tagged with `SourcePlugin` for proper routing to the originating plugin
 
 Plugin adaptation guide for Openclaw-like bots:
 
