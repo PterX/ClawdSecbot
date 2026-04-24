@@ -5,6 +5,40 @@ import '../l10n/app_localizations.dart';
 import '../models/security_event_model.dart';
 import '../utils/app_fonts.dart';
 
+/// 将后端下发的 eventType 常量本地化（仅翻译 Go 侧写死的枚举值，
+/// 未识别值原样返回以兼容 LLM/启发式自由文本）。
+String localizeSecurityEventType(String raw, AppLocalizations l10n) {
+  switch (raw.trim().toLowerCase()) {
+    case 'blocked':
+      return l10n.eventBlocked;
+    case 'needs_confirmation':
+      return l10n.riskTypeNeedsConfirmation;
+    case 'tool_execution':
+      return l10n.eventToolExecution;
+    case 'warning':
+      return l10n.eventTypeWarning;
+    case 'other':
+      return l10n.eventOther;
+    default:
+      return raw;
+  }
+}
+
+/// 将后端下发的 riskType 常量本地化（仅翻译 Go 侧写死的枚举值，
+/// 启发式/LLM 返回的自由文本原样返回）。
+String localizeSecurityRiskType(String raw, AppLocalizations l10n) {
+  switch (raw.trim().toUpperCase()) {
+    case 'QUOTA':
+      return l10n.riskTypeQuota;
+    case 'SANDBOX_BLOCKED':
+      return l10n.riskTypeSandboxBlocked;
+    case 'NEEDS_CONFIRMATION':
+      return l10n.riskTypeNeedsConfirmation;
+    default:
+      return raw;
+  }
+}
+
 /// 安全事件面板：展示数据库驱动的安全事件记录
 class ProtectionMonitorEventPanel extends StatefulWidget {
   final List<SecurityEvent> events;
@@ -205,7 +239,7 @@ class _ProtectionMonitorEventPanelState
                         borderRadius: BorderRadius.circular(3),
                       ),
                       child: Text(
-                        event.riskType,
+                        localizeSecurityRiskType(event.riskType, l10n),
                         style: AppFonts.inter(fontSize: 10, color: eventColor),
                       ),
                     ),
@@ -250,18 +284,21 @@ class _ProtectionMonitorEventPanelState
 
   Color _getEventColor(SecurityEvent event) {
     if (event.isBlocked) return const Color(0xFFEF4444);
+    if (event.isNeedsConfirmation) return const Color(0xFFF59E0B);
     if (event.isToolExecution) return const Color(0xFF6366F1);
     return const Color(0xFFF59E0B);
   }
 
   IconData _getEventIcon(SecurityEvent event) {
     if (event.isBlocked) return LucideIcons.shieldOff;
+    if (event.isNeedsConfirmation) return LucideIcons.shieldAlert;
     if (event.isToolExecution) return LucideIcons.wrench;
     return LucideIcons.alertTriangle;
   }
 
   String _getEventTypeLabel(SecurityEvent event, AppLocalizations l10n) {
     if (event.isBlocked) return l10n.eventBlocked;
+    if (event.isNeedsConfirmation) return l10n.riskTypeNeedsConfirmation;
     if (event.isToolExecution) return l10n.eventToolExecution;
     return l10n.eventOther;
   }
@@ -319,6 +356,8 @@ class _SecurityEventDetailDialogState
   Widget build(BuildContext context) {
     final eventColor = event.isBlocked
         ? const Color(0xFFEF4444)
+        : event.isNeedsConfirmation
+        ? const Color(0xFFF59E0B)
         : event.isToolExecution
         ? const Color(0xFF6366F1)
         : const Color(0xFFF59E0B);
@@ -342,6 +381,8 @@ class _SecurityEventDetailDialogState
                   Icon(
                     event.isBlocked
                         ? LucideIcons.shieldOff
+                        : event.isNeedsConfirmation
+                        ? LucideIcons.shieldAlert
                         : event.isToolExecution
                         ? LucideIcons.wrench
                         : LucideIcons.alertTriangle,
@@ -403,14 +444,20 @@ class _SecurityEventDetailDialogState
                             event.actionDesc,
                           ),
                         if (event.riskType.isNotEmpty)
-                          _buildDetailRow(l10n.eventRiskType, event.riskType),
+                          _buildDetailRow(
+                            l10n.eventRiskType,
+                            localizeSecurityRiskType(event.riskType, l10n),
+                          ),
                         _buildDetailRow(
                           l10n.eventSource,
                           event.isFromReactAgent
                               ? l10n.eventSourceAgent
                               : l10n.eventSourceHeuristic,
                         ),
-                        _buildDetailRow(l10n.eventType, event.eventType),
+                        _buildDetailRow(
+                          l10n.eventType,
+                          localizeSecurityEventType(event.eventType, l10n),
+                        ),
                         if (event.detail.isNotEmpty)
                           _buildDetailRow(l10n.eventDetail, event.detail),
                         _buildDetailRow('ID', event.id),

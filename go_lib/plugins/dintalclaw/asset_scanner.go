@@ -133,12 +133,7 @@ func (s *DintalclawAssetScanner) rewriteStableAssetID(asset *core.Asset) {
 		configPath = strings.TrimSpace(s.configPath)
 	}
 	prev := asset.ID
-	asset.ID = core.ComputeAssetID(
-		dintalclawAssetName,
-		configPath,
-		nil,
-		nil,
-	)
+	asset.ID = core.ComputeAssetID(dintalclawAssetName, configPath)
 	if prev != "" && prev != asset.ID {
 		logging.Info("[DintalclawScanner] Rewrote volatile asset_id %s -> %s (stable)", prev, asset.ID)
 	}
@@ -263,6 +258,7 @@ func (s *DintalclawAssetScanner) enrichAsset(asset *core.Asset) {
 
 	version := extractVersionFromInstallRoot(root)
 	if version != "" {
+		asset.Version = version
 		asset.Metadata["asset_version"] = version
 	}
 

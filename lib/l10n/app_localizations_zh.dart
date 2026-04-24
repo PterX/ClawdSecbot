@@ -320,6 +320,24 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get riskOpenclawInsecureOrDangerousFlags => '网关启用了不安全或危险选项';
+
+  @override
+  String get riskOpenclawInsecureOrDangerousFlagsDesc =>
+      '检测到 OpenClaw 网关配置中启用了会削弱认证或来源信任保护的危险选项。除非有严格且已验证的威胁模型豁免，否则应立即关闭这些选项。';
+
+  @override
+  String get riskOpenclawConfigPatchOutdated => 'OpenClaw 配置安全补丁缺失';
+
+  @override
+  String riskOpenclawConfigPatchOutdatedDesc(
+    String currentVersion,
+    String requiredVersion,
+  ) {
+    return '当前 OpenClaw 版本（$currentVersion）缺少已发布的配置安全修复。请立即升级到 $requiredVersion 或更高版本。';
+  }
+
+  @override
   String get riskSkillsNotScanned => 'Skills 未进行提示词注入扫描';
 
   @override
@@ -584,6 +602,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get modelConfigTesting => '测试连接中...';
+
+  @override
+  String get modelConfigValidateConnection => '验证连通性';
+
+  @override
+  String get modelConfigTestSuccess => '连通性验证通过';
 
   @override
   String get modelConfigSaving => '保存中...';
@@ -1161,6 +1185,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get tokenUnitM => '百万';
+
+  @override
+  String get tokenUnitBase => '个';
 
   @override
   String get tokenPresetLabel => '快捷选择';
@@ -1815,6 +1842,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get exitRestoreConfirm => '恢复并退出';
 
   @override
+  String get exitRestoreExitOnly => '仅退出';
+
+  @override
   String get exitWithoutRestoreConfirm => '不恢复直接退出';
 
   @override
@@ -1956,6 +1986,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get eventOther => '其他事件';
+
+  @override
+  String get eventTypeWarning => '告警';
+
+  @override
+  String get riskTypeQuota => '配额限制';
+
+  @override
+  String get riskTypeSandboxBlocked => '沙箱拦截';
+
+  @override
+  String get riskTypeNeedsConfirmation => '待确认';
 
   @override
   String get eventTime => '时间';

@@ -62,12 +62,12 @@ type ProtectionLifecycleHooks interface {
 
 ### 5.1 Build stable fingerprint
 
-Use `core.ComputeAssetID(name, configPath, ports, processPaths)` to generate deterministic IDs.
+Use `core.ComputeAssetID(name, configPath)` to generate deterministic IDs.
 
 Rules:
 
-- Keep fingerprint inputs stable and canonical.
-- Include fields that identify one bot instance.
+- Only `name` + `config_path` participate in the fingerprint; both must be stable and canonical.
+- Runtime-dynamic data (`ports`, `process_paths`, `pid`, `service_name`, etc.) MUST NOT enter the fingerprint; otherwise starting/stopping the bot will drift `asset_id` and break policy/protection binding.
 - Do not include volatile data (timestamps/temp paths/random values).
 
 ### 5.2 SourcePlugin

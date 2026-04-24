@@ -39,8 +39,23 @@ func (p *testPlugin) ScanAssets() ([]Asset, error) {
 	return p.assets, nil
 }
 
-func (p *testPlugin) AssessRisks(scannedHashes map[string]bool) ([]Risk, error) {
+func (p *testPlugin) AssessRisks(scannedHashes map[string]bool, assets []Asset) ([]Risk, error) {
 	return nil, nil
+}
+
+func (p *testPlugin) GetVulnInfoJSON() []byte {
+	return nil
+}
+
+func (p *testPlugin) CompareVulnerabilityVersion(current, target string) (int, bool) {
+	switch {
+	case current < target:
+		return -1, true
+	case current > target:
+		return 1, true
+	default:
+		return 0, true
+	}
 }
 
 func (p *testPlugin) MitigateRisk(riskInfo string) string {
@@ -69,6 +84,11 @@ type riskAssessPlugin struct {
 	risks []Risk
 }
 
+type vulnAwarePlugin struct {
+	testPlugin
+	vulnInfo []byte
+}
+
 func (p *mitigationAwarePlugin) MitigateRisk(riskInfo string) string {
 	if strings.Contains(riskInfo, `"`+"id"+`":"`+p.handledRiskID+`"`) {
 		return `{"success":true}`
@@ -76,8 +96,12 @@ func (p *mitigationAwarePlugin) MitigateRisk(riskInfo string) string {
 	return `{"success":false,"error":"not implemented"}`
 }
 
-func (p *riskAssessPlugin) AssessRisks(scannedHashes map[string]bool) ([]Risk, error) {
+func (p *riskAssessPlugin) AssessRisks(scannedHashes map[string]bool, assets []Asset) ([]Risk, error) {
 	return p.risks, nil
+}
+
+func (p *vulnAwarePlugin) GetVulnInfoJSON() []byte {
+	return p.vulnInfo
 }
 
 func newTestPlugin(assetName string) *testPlugin {
@@ -180,7 +204,7 @@ func TestPluginManager_GetProtectionStatus_ResolvedByAssetID(t *testing.T) {
 	}
 }
 
-func TestPluginManager_MitigateRisk_RejectsSourcePluginInvalid(t *testing.T) {
+func TestPluginManager_MitigateRisk_RejectsAssetIDInvalid(t *testing.T) {
 	pm := &PluginManager{
 		registeredPlugins: make(map[string]BotPlugin),
 		instances:         make(map[string]*AssetPluginInstance),
@@ -189,15 +213,21 @@ func TestPluginManager_MitigateRisk_RejectsSourcePluginInvalid(t *testing.T) {
 		testPlugin:    *newTestPlugin("Openclaw"),
 		handledRiskID: "logging_redact_off",
 	}
+	p.assets = []Asset{
+		{ID: "openclaw:abc123", Name: "Openclaw", SourcePlugin: "Openclaw"},
+	}
 	pm.Register(p)
+	if _, err := pm.ScanAllAssets(); err != nil {
+		t.Fatalf("ScanAllAssets failed: %v", err)
+	}
 
-	result := pm.MitigateRisk(`{"id":"logging_redact_off","source_plugin":"core"}`)
+	result := pm.MitigateRisk(`{"id":"logging_redact_off","source_plugin":"openclaw","asset_id":"openclaw:missing"}`)
 	if !strings.Contains(result, `"success":false`) {
-		t.Fatalf("expected strict failure for unknown source plugin, got: %s", result)
+		t.Fatalf("expected strict failure for unknown asset_id, got: %s", result)
 	}
 }
 
-func TestPluginManager_MitigateRisk_RejectsSourcePluginMissing(t *testing.T) {
+func TestPluginManager_MitigateRisk_RejectsAssetIDMissing(t *testing.T) {
 	pm := &PluginManager{
 		registeredPlugins: make(map[string]BotPlugin),
 		instances:         make(map[string]*AssetPluginInstance),
@@ -209,12 +239,12 @@ func TestPluginManager_MitigateRisk_RejectsSourcePluginMissing(t *testing.T) {
 	pm.Register(p)
 
 	result := pm.MitigateRisk(`{"id":"logging_redact_off"}`)
-	if !strings.Contains(result, `"source_plugin is required"`) {
-		t.Fatalf("expected strict source_plugin required error, got: %s", result)
+	if !strings.Contains(result, `"asset_id is required"`) {
+		t.Fatalf("expected strict asset_id required error, got: %s", result)
 	}
 }
 
-func TestPluginManager_MitigateRisk_RoutesBySourcePlugin(t *testing.T) {
+func TestPluginManager_MitigateRisk_RoutesByAssetID(t *testing.T) {
 	pm := &PluginManager{
 		registeredPlugins: make(map[string]BotPlugin),
 		instances:         make(map[string]*AssetPluginInstance),
@@ -223,11 +253,17 @@ func TestPluginManager_MitigateRisk_RoutesBySourcePlugin(t *testing.T) {
 		testPlugin:    *newTestPlugin("Openclaw"),
 		handledRiskID: "logging_redact_off",
 	}
+	p.assets = []Asset{
+		{ID: "openclaw:abc123", Name: "Openclaw", SourcePlugin: "Openclaw"},
+	}
 	pm.Register(p)
+	if _, err := pm.ScanAllAssets(); err != nil {
+		t.Fatalf("ScanAllAssets failed: %v", err)
+	}
 
-	result := pm.MitigateRisk(`{"id":"logging_redact_off","source_plugin":"openclaw"}`)
+	result := pm.MitigateRisk(`{"id":"logging_redact_off","source_plugin":"openclaw","asset_id":"openclaw:abc123"}`)
 	if !strings.Contains(result, `"success":true`) {
-		t.Fatalf("expected mitigation routed by source_plugin, got: %s", result)
+		t.Fatalf("expected mitigation routed by asset_id, got: %s", result)
 	}
 }
 
@@ -307,5 +343,50 @@ func TestPluginManager_AssessAllRisks_IncludesAssetNameInArgs(t *testing.T) {
 	}
 	if got := risks[1].Args["asset_name"]; got != "custom_asset" {
 		t.Fatalf("expected existing asset_name to be kept, got %#v", got)
+	}
+}
+
+func TestPluginManager_AssessAllRisks_AppendsVersionMatchedVulnerabilities(t *testing.T) {
+	pm := &PluginManager{
+		registeredPlugins: make(map[string]BotPlugin),
+		instances:         make(map[string]*AssetPluginInstance),
+	}
+	p := &vulnAwarePlugin{
+		testPlugin: *newTestPlugin("Openclaw"),
+		vulnInfo: []byte(`[
+			{
+				"risk_id": "openclaw_cve-xxxx-xxxxx",
+				"check_point": {"operation": "<", "version": "2026.3.8"},
+				"mitigation": {
+					"type": "suggestion",
+					"risk": "High",
+					"title": "Upgrade Openclaw",
+					"description": "Known vulnerable build.",
+					"suggestions": "Update Version"
+				}
+			}
+		]`),
+	}
+	p.assets = []Asset{
+		{ID: "openclaw:abc123", Name: "Openclaw", SourcePlugin: "Openclaw", Version: "2026.3.7"},
+	}
+
+	pm.Register(p)
+	if _, err := pm.ScanAllAssets(); err != nil {
+		t.Fatalf("ScanAllAssets failed: %v", err)
+	}
+
+	risks, err := pm.AssessAllRisks(nil)
+	if err != nil {
+		t.Fatalf("AssessAllRisks failed: %v", err)
+	}
+	if len(risks) != 1 {
+		t.Fatalf("expected 1 vulnerability risk, got %d", len(risks))
+	}
+	if got := risks[0].ID; got != "openclaw_cve-xxxx-xxxxx" {
+		t.Fatalf("unexpected risk id: %s", got)
+	}
+	if got := risks[0].AssetID; got != "openclaw:abc123" {
+		t.Fatalf("expected vulnerability asset_id openclaw:abc123, got %s", got)
 	}
 }

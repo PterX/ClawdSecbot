@@ -14,19 +14,34 @@ import '../services/protection_database_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/runtime_platform.dart';
 import 'bot_model_config_form.dart';
+import 'processing_notice_card.dart';
 import 'security_model_config_form.dart';
 import '../services/plugin_service.dart';
 
+part 'protection_config_dialog_network.dart';
+
 /// Token 单位枚举
+///
+/// base 单位（multiplier=1）用于展示/编辑无法被 1000 整除的原始 token 值，
+/// 防止小于 1000 的 DB 值在 UI 上被整除为 0 而丢失显示。
 enum _TokenUnit {
+  base(1),
   k(1000),
   m(1000000);
 
   final int multiplier;
   const _TokenUnit(this.multiplier);
 
-  String label(AppLocalizations l10n) =>
-      this == k ? l10n.tokenUnitK : l10n.tokenUnitM;
+  String label(AppLocalizations l10n) {
+    switch (this) {
+      case _TokenUnit.base:
+        return l10n.tokenUnitBase;
+      case _TokenUnit.k:
+        return l10n.tokenUnitK;
+      case _TokenUnit.m:
+        return l10n.tokenUnitM;
+    }
+  }
 }
 
 /// Token 预设选项
@@ -56,6 +71,14 @@ class ProtectionConfigDialog extends StatefulWidget {
 
 class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
     with SingleTickerProviderStateMixin {
+  static const String _defaultProtectionPolicyAssetID =
+      '__default_protection_policy__';
+  static const String _dashboardReconnectHint =
+      '在此期间Openclaw Dashboard页面会提示断开连接，稍后将恢复正常';
+  static const String _defaultSavingMessage = '正在保存配置，请稍候...';
+  static const String _botModelUpdatingMessage =
+      '正在更新Openclaw配置，$_dashboardReconnectHint';
+
   static const Map<String, String> _zhSensitiveActionLabels = {
     'delete': '删除',
     'remove': '移除',
@@ -165,12 +188,6 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
   final TextEditingController _networkOutboundInputController =
       TextEditingController();
 
-  // 网络权限 - 入栈 (inbound)
-  PermissionMode _networkInboundMode = PermissionMode.blacklist;
-  final List<String> _networkInboundList = [];
-  final TextEditingController _networkInboundInputController =
-      TextEditingController();
-
   // Shell权限
   PermissionMode _shellMode = PermissionMode.blacklist;
   final List<String> _shellList = [];
@@ -184,11 +201,16 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
 
   // 防止重复点击保存
   bool _isSaving = false;
+  // Bot 模型连通性测试态，驱动 footer 验证按钮的转圈动画并屏蔽保存/取消。
+  bool _isValidatingBotModel = false;
+  String _savingProgressMessage = _defaultSavingMessage;
 
   // Shepherd User Rules
   final List<String> _sensitiveActions = [];
   final TextEditingController _sensitiveActionsInputController =
       TextEditingController();
+  // 临时关闭用户自定义规则配置区，保留实现便于后续恢复。
+  static const bool _showUserCustomRulesSection = false;
 
   // 内置安全技能列表
   List<Map<String, dynamic>> _bundledSkills = [];
@@ -208,6 +230,28 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
   int? get _botTabIndex {
     if (!_requiresBotModelConfig) return null;
     return BuildConfig.isAppStore ? 2 : 3;
+  }
+
+  /// 绑定 TabController 监听，确保底部按钮区随标签切换刷新。
+  void _attachTabControllerListener() {
+    _tabController.addListener(() {
+      if (!mounted || _tabController.indexIsChanging) {
+        return;
+      }
+      setState(() {});
+    });
+  }
+
+  void _updateNetworkOutboundMode(PermissionMode mode) {
+    setState(() => _networkOutboundMode = mode);
+  }
+
+  void _removeNetworkOutboundAt(int index) {
+    setState(() => _networkOutboundList.removeAt(index));
+  }
+
+  void _appendNetworkAddress(List<String> list, String address) {
+    setState(() => list.add(address));
   }
 
   void _updateTabControllerForRequirement(bool requiresBotModelConfig) {
@@ -234,6 +278,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
       vsync: this,
       initialIndex: nextIndex,
     );
+    _attachTabControllerListener();
 
     // Delay old controller disposal until widgets have switched to the new
     // controller, otherwise TabBar/TabBarView may still hold dependents.
@@ -247,6 +292,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
     super.initState();
     // 默认按“需要 bot 模型配置”初始化，加载配置后再按插件能力动态调整。
     _tabController = TabController(length: _tabCount, vsync: this);
+    _attachTabControllerListener();
     _loadConfig();
   }
 
@@ -257,7 +303,6 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
     _dailyDisplayController.dispose();
     _pathInputController.dispose();
     _networkOutboundInputController.dispose();
-    _networkInboundInputController.dispose();
     _shellInputController.dispose();
     _sensitiveActionsInputController.dispose();
     super.dispose();
@@ -265,16 +310,38 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
 
   Future<void> _loadConfig() async {
     try {
-      final savedConfig = await ProtectionDatabaseService().getProtectionConfig(
+      final protectionDatabaseService = ProtectionDatabaseService();
+      final pluginService = PluginService();
+      final savedConfig = await protectionDatabaseService.getProtectionConfig(
         widget.assetName,
         widget.assetID,
       );
+      bool fallbackToDefaultPolicy = false;
       if (savedConfig != null) {
         _config = savedConfig;
       } else {
-        _config = ProtectionConfig.defaultConfig(
-          widget.assetName,
-        ).copyWith(assetID: widget.assetID);
+        final defaultPolicyConfig = await protectionDatabaseService
+            .getProtectionConfig(
+              widget.assetName,
+              _defaultProtectionPolicyAssetID,
+            );
+        if (defaultPolicyConfig != null) {
+          fallbackToDefaultPolicy = true;
+          _config = defaultPolicyConfig.copyWith(
+            assetName: widget.assetName,
+            assetID: widget.assetID.isNotEmpty
+                ? widget.assetID
+                : defaultPolicyConfig.assetID,
+          );
+          appLogger.info(
+            '[ProtectionConfig] Loaded default policy for dialog: '
+            'asset=${widget.assetName}, assetID=${widget.assetID}',
+          );
+        } else {
+          _config = ProtectionConfig.defaultConfig(
+            widget.assetName,
+          ).copyWith(assetID: widget.assetID);
+        }
       }
       if (widget.assetID.isNotEmpty && _config.assetID != widget.assetID) {
         _config = _config.copyWith(assetID: widget.assetID);
@@ -299,10 +366,6 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
       _networkOutboundMode = _config.networkPermission.outbound.mode;
       _networkOutboundList.clear();
       _networkOutboundList.addAll(_config.networkPermission.outbound.addresses);
-      // 网络权限 - 入栈
-      _networkInboundMode = _config.networkPermission.inbound.mode;
-      _networkInboundList.clear();
-      _networkInboundList.addAll(_config.networkPermission.inbound.addresses);
 
       // Shell权限：前端仅保留黑名单模式
       _shellMode = PermissionMode.blacklist;
@@ -316,19 +379,25 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
       _auditOnly = _config.auditOnly;
 
       // Load Shepherd Rules
-      final rules = await PluginService().loadAndSyncShepherdRules(
-        widget.assetName,
-        widget.assetID,
-      );
+      final rules = fallbackToDefaultPolicy
+          ? <String, List<String>>{
+              'sensitiveActions': await protectionDatabaseService
+                  .getShepherdSensitiveActions(widget.assetName, ''),
+            }
+          : await pluginService.loadAndSyncShepherdRules(
+              widget.assetName,
+              widget.assetID,
+            );
       _sensitiveActions.clear();
       _sensitiveActions.addAll(rules['sensitiveActions'] ?? const []);
 
       // Load bundled ReAct skills
-      _bundledSkills = PluginService().listBundledReActSkills();
+      _bundledSkills = pluginService.listBundledReActSkills();
 
       // Resolve whether this plugin requires bot model config.
-      final requiresBotModelConfig = await PluginService()
-          .requiresBotModelConfig(widget.assetName);
+      final requiresBotModelConfig = await pluginService.requiresBotModelConfig(
+        widget.assetName,
+      );
       _updateTabControllerForRequirement(requiresBotModelConfig);
 
       setState(() {
@@ -375,6 +444,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
       barrierDismissible: false,
       builder: (dialogContext) {
         bool reuseBotConfig = botConfig != null;
+        bool validating = false;
         final formKey = GlobalKey<SecurityModelConfigFormState>();
         return StatefulBuilder(
           builder: (context, setState) => AlertDialog(
@@ -452,52 +522,104 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
                   style: AppFonts.inter(color: Colors.white54),
                 ),
               ),
-              ElevatedButton(
-                onPressed: () async {
-                  SecurityModelConfig? savedConfig;
-                  bool success = false;
-                  if (reuseBotConfig && botConfig != null) {
-                    savedConfig = _toSecurityModelConfig(botConfig);
-                    success = await SecurityModelConfigService().saveConfig(
-                      savedConfig,
-                    );
-                    if (success) {
-                      try {
-                        final protectionService = ProtectionService.forAsset(
-                          widget.assetName,
-                          _config.assetID,
-                        );
-                        await protectionService.updateSecurityModelConfig(
-                          savedConfig,
-                        );
-                      } catch (_) {}
-                    }
-                  } else {
-                    success =
-                        await (formKey.currentState?.saveConfig() ?? false);
-                    if (success) {
-                      savedConfig = await ModelConfigDatabaseService()
-                          .getSecurityModelConfig();
-                    }
-                  }
-
-                  if (!dialogContext.mounted) return;
-                  if (success && savedConfig != null) {
-                    Navigator.of(dialogContext).pop(savedConfig);
-                    return;
-                  }
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    SnackBar(
-                      content: Text(
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: (reuseBotConfig || validating)
+                    ? null
+                    : () async {
+                        setState(() => validating = true);
+                        try {
+                          await formKey.currentState?.validateConnection();
+                        } finally {
+                          if (dialogContext.mounted) {
+                            setState(() => validating = false);
+                          }
+                        }
+                      },
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                  foregroundColor: Colors.white70,
+                ),
+                child: validating
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            AppLocalizations.of(
+                              dialogContext,
+                            )!.modelConfigTesting,
+                            style: AppFonts.inter(color: Colors.white70),
+                          ),
+                        ],
+                      )
+                    : Text(
                         AppLocalizations.of(
                           dialogContext,
-                        )!.modelConfigSaveFailed,
+                        )!.modelConfigValidateConnection,
+                        style: AppFonts.inter(color: Colors.white70),
                       ),
-                    ),
-                  );
-                },
+              ),
+              ElevatedButton(
+                onPressed: validating
+                    ? null
+                    : () async {
+                        SecurityModelConfig? savedConfig;
+                        bool success = false;
+                        if (reuseBotConfig && botConfig != null) {
+                          savedConfig = _toSecurityModelConfig(botConfig);
+                          success = await SecurityModelConfigService()
+                              .saveConfig(savedConfig);
+                          if (success) {
+                            try {
+                              final protectionService =
+                                  ProtectionService.forAsset(
+                                    widget.assetName,
+                                    _config.assetID,
+                                  );
+                              await protectionService.updateSecurityModelConfig(
+                                savedConfig,
+                              );
+                            } catch (_) {}
+                          }
+                        } else {
+                          success =
+                              await (formKey.currentState?.saveConfig() ??
+                                  false);
+                          if (success) {
+                            savedConfig = await ModelConfigDatabaseService()
+                                .getSecurityModelConfig();
+                          }
+                        }
+
+                        if (!dialogContext.mounted) return;
+                        if (success && savedConfig != null) {
+                          Navigator.of(dialogContext).pop(savedConfig);
+                          return;
+                        }
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              AppLocalizations.of(
+                                dialogContext,
+                              )!.modelConfigSaveFailed,
+                            ),
+                          ),
+                        );
+                      },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6366F1),
+                  disabledBackgroundColor: const Color(
+                    0xFF6366F1,
+                  ).withValues(alpha: 0.5),
                 ),
                 child: Text(
                   AppLocalizations.of(dialogContext)!.modelConfigSave,
@@ -514,7 +636,10 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
   Future<void> _saveConfig({bool closeOnSave = true}) async {
     // 防止重复点击
     if (_isSaving) return;
-    setState(() => _isSaving = true);
+    setState(() {
+      _isSaving = true;
+      _savingProgressMessage = _defaultSavingMessage;
+    });
 
     try {
       final l10n = AppLocalizations.of(context)!;
@@ -600,9 +725,10 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
             mode: _networkOutboundMode,
             addresses: List.from(_networkOutboundList),
           ),
+          // 网络入栈配置已下线：固定为空，避免继续写入无效规则。
           inbound: DirectionalNetworkConfig(
-            mode: _networkInboundMode,
-            addresses: List.from(_networkInboundList),
+            mode: PermissionMode.blacklist,
+            addresses: const [],
           ),
         ),
         shellPermission: ShellPermissionConfig(
@@ -704,6 +830,13 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
           // 4b. 沙箱配置变更时同步到网关（修改 systemd unit / sandbox-exec 并重启 gateway）
           // 当沙箱开关变化或沙箱开启时权限可能变化，统一同步（函数幂等，无变化不重启）
           if (newConfig.sandboxEnabled || oldSandboxEnabled) {
+            final sandboxAction = newConfig.sandboxEnabled ? '安装' : '卸载';
+            if (mounted) {
+              setState(() {
+                _savingProgressMessage =
+                    '正在$sandboxAction权限管控沙箱，$_dashboardReconnectHint';
+              });
+            }
             appLogger.info(
               '[ProtectionConfig] Sandbox config may have changed '
               '(enabled: $oldSandboxEnabled -> ${newConfig.sandboxEnabled}), '
@@ -721,6 +854,11 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
           );
           if (protectionService.isProxyRunning) {
             try {
+              if (mounted) {
+                setState(() {
+                  _savingProgressMessage = _botModelUpdatingMessage;
+                });
+              }
               final result = await protectionService
                   .restartProtectionProxyForBotModelUpdate(
                     securityModelConfig,
@@ -818,46 +956,13 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
         if (_isSaving)
           Positioned.fill(
             child: Container(
-              color: Colors.black.withValues(alpha: 0.5),
+              color: Colors.black.withValues(alpha: 0.42),
               child: Center(
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A2E),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.1),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        blurRadius: 24,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: CircularProgressIndicator(
-                          color: Color(0xFF6366F1),
-                          strokeWidth: 3,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        l10n.modelConfigSaving,
-                        style: AppFonts.inter(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          decoration: TextDecoration.none,
-                        ),
-                      ),
-                    ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: ProcessingNoticeCard(
+                    title: '正在应用配置',
+                    message: _savingProgressMessage,
                   ),
                 ),
               ),
@@ -975,83 +1080,101 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
           const SizedBox(height: 16),
 
           // Shepherd User Rules（标题 + 敏感操作，整体框起来）
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.03),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(
-                      LucideIcons.shieldAlert,
-                      color: Color(0xFF6366F1),
-                      size: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            l10n.shepherdRulesTitle,
-                            style: AppFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+          if (_showUserCustomRulesSection)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.03),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        LucideIcons.shieldAlert,
+                        color: Color(0xFF6366F1),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              l10n.shepherdRulesTitle,
+                              style: AppFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              l10n.shepherdRulesDesc,
+                              style: AppFonts.inter(
+                                fontSize: 12,
+                                color: Colors.white54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Input
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.1),
+                            ),
+                          ),
+                          child: TextField(
+                            controller: _sensitiveActionsInputController,
+                            style: AppFonts.firaCode(
+                              fontSize: 12,
                               color: Colors.white,
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            l10n.shepherdRulesDesc,
-                            style: AppFonts.inter(
-                              fontSize: 12,
-                              color: Colors.white54,
+                            decoration: InputDecoration(
+                              hintText: l10n.shepherdSensitivePlaceholder,
+                              hintStyle: AppFonts.inter(
+                                fontSize: 11,
+                                color: Colors.white38,
+                              ),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 10,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Input
-                Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.1),
+                            onSubmitted: (_) {
+                              final val = _sensitiveActionsInputController.text
+                                  .trim();
+                              if (val.isNotEmpty &&
+                                  !_sensitiveActions.contains(val)) {
+                                setState(() => _sensitiveActions.add(val));
+                                _sensitiveActionsInputController.clear();
+                                _saveConfig(closeOnSave: false);
+                              }
+                            },
                           ),
                         ),
-                        child: TextField(
-                          controller: _sensitiveActionsInputController,
-                          style: AppFonts.firaCode(
-                            fontSize: 12,
-                            color: Colors.white,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: l10n.shepherdSensitivePlaceholder,
-                            hintStyle: AppFonts.inter(
-                              fontSize: 11,
-                              color: Colors.white38,
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 10,
-                            ),
-                          ),
-                          onSubmitted: (_) {
+                      ),
+                      const SizedBox(width: 8),
+                      MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: () {
                             final val = _sensitiveActionsInputController.text
                                 .trim();
                             if (val.isNotEmpty &&
@@ -1061,109 +1184,95 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
                               _saveConfig(closeOnSave: false);
                             }
                           },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: GestureDetector(
-                        onTap: () {
-                          final val = _sensitiveActionsInputController.text
-                              .trim();
-                          if (val.isNotEmpty &&
-                              !_sensitiveActions.contains(val)) {
-                            setState(() => _sensitiveActions.add(val));
-                            _sensitiveActionsInputController.clear();
-                            _saveConfig(closeOnSave: false);
-                          }
-                        },
-                        child: Container(
-                          height: 36,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6366F1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Icon(
-                            LucideIcons.plus,
-                            size: 16,
-                            color: Colors.white,
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF6366F1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Icon(
+                              LucideIcons.plus,
+                              size: 16,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
 
-                // Items
-                if (_sensitiveActions.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _sensitiveActions.asMap().entries.map((entry) {
-                      final localized = _localizeSensitiveActionForDisplay(
-                        entry.value,
-                        l10n,
-                      );
-                      final displayText = localized == entry.value
-                          ? entry.value
-                          : localized;
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444).withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
+                  // Items
+                  if (_sensitiveActions.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _sensitiveActions.asMap().entries.map((entry) {
+                        final localized = _localizeSensitiveActionForDisplay(
+                          entry.value,
+                          l10n,
+                        );
+                        final displayText = localized == entry.value
+                            ? entry.value
+                            : localized;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
                             color: const Color(
                               0xFFEF4444,
-                            ).withValues(alpha: 0.3),
+                            ).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: const Color(
+                                0xFFEF4444,
+                              ).withValues(alpha: 0.3),
+                            ),
                           ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Flexible(
-                              child: Text(
-                                displayText,
-                                style: AppFonts.firaCode(
-                                  fontSize: 11,
-                                  color: Colors.white,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  displayText,
+                                  style: AppFonts.firaCode(
+                                    fontSize: 11,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 6),
-                            MouseRegion(
-                              cursor: SystemMouseCursors.click,
-                              child: GestureDetector(
-                                onTap: () {
-                                  setState(
-                                    () => _sensitiveActions.removeAt(entry.key),
-                                  );
-                                  _saveConfig(closeOnSave: false);
-                                },
-                                child: const Icon(
-                                  LucideIcons.x,
-                                  size: 12,
-                                  color: Colors.white54,
+                              const SizedBox(width: 6),
+                              MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(
+                                      () =>
+                                          _sensitiveActions.removeAt(entry.key),
+                                    );
+                                    _saveConfig(closeOnSave: false);
+                                  },
+                                  child: const Icon(
+                                    LucideIcons.x,
+                                    size: 12,
+                                    color: Colors.white54,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
 
-          const SizedBox(height: 16),
+          if (_showUserCustomRulesSection) const SizedBox(height: 16),
 
           // 安全技能展示区域
           _buildSecuritySkillsSection(l10n),
@@ -1246,12 +1355,8 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
                   rawDesc,
                   l10n,
                 );
-                final name = localizedName == rawName
-                    ? rawName
-                    : localizedName;
-                final desc = localizedDesc == rawDesc
-                    ? rawDesc
-                    : localizedDesc;
+                final name = localizedName == rawName ? rawName : localizedName;
+                final desc = localizedDesc == rawDesc ? rawDesc : localizedDesc;
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(12),
@@ -1575,7 +1680,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
                   ),
                   const SizedBox(height: 20),
 
-                  // 网络权限设置（出栈 + 入栈）
+                  // 网络权限设置（仅出栈）
                   _buildNetworkPermissionSection(l10n),
                   const SizedBox(height: 20),
 
@@ -1976,16 +2081,21 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
   }
 
   /// 原始 token 值转换为显示值（数字文本 + 单位）
+  ///
+  /// 选择能够无损表示 rawValue 的最大单位：
+  /// - 0 或负值 → 0 个（语义上等同不限制，_displayToRaw 会将 <=0 归零）
+  /// - 1000000 的整倍数 → M
+  /// - 1000 的整倍数 → K
+  /// - 其余一律使用 base 单位（个），避免被 K 整除后显示为 0 而丢失原值
   (String, _TokenUnit) _rawToDisplay(int rawValue) {
-    if (rawValue <= 0) return ('', _TokenUnit.k);
+    if (rawValue <= 0) return ('0', _TokenUnit.base);
     if (rawValue % 1000000 == 0) {
       return ('${rawValue ~/ 1000000}', _TokenUnit.m);
     }
     if (rawValue % 1000 == 0) {
       return ('${rawValue ~/ 1000}', _TokenUnit.k);
     }
-    // 兜底：以K为单位整除
-    return ('${rawValue ~/ 1000}', _TokenUnit.k);
+    return ('$rawValue', _TokenUnit.base);
   }
 
   /// 显示值转换为原始 token 值
@@ -2201,126 +2311,6 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
     );
   }
 
-  /// 构建网络权限设置区块（出栈 + 入栈）
-  Widget _buildNetworkPermissionSection(AppLocalizations l10n) {
-    final isMacSandbox = isRuntimeMacOS && _sandboxEnabled;
-    final placeholder = isMacSandbox
-        ? l10n.networkPermissionPlaceholderSandbox
-        : l10n.networkPermissionPlaceholder;
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 总标题
-          Row(
-            children: [
-              const Icon(LucideIcons.globe, color: Color(0xFF6366F1), size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.networkPermissionTitle,
-                      style: AppFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                    Text(
-                      isMacSandbox
-                          ? l10n.networkPermissionDescSandbox
-                          : l10n.networkPermissionDesc,
-                      style: AppFonts.inter(
-                        fontSize: 11,
-                        color: Colors.white54,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // 出栈 (Outbound) 子区块
-          _buildDirectionalNetworkBlock(
-            title: l10n.networkOutboundTitle,
-            desc: l10n.networkOutboundDesc,
-            icon: LucideIcons.arrowUpRight,
-            mode: _networkOutboundMode,
-            onModeChanged: (mode) =>
-                setState(() => _networkOutboundMode = mode),
-            items: _networkOutboundList,
-            inputController: _networkOutboundInputController,
-            inputHint: placeholder,
-            onAdd: () => _addNetworkAddress(
-              _networkOutboundInputController,
-              _networkOutboundList,
-              l10n,
-            ),
-            onRemove: (index) =>
-                setState(() => _networkOutboundList.removeAt(index)),
-          ),
-          const SizedBox(height: 16),
-
-          // 入栈 (Inbound) 子区块
-          _buildDirectionalNetworkBlock(
-            title: l10n.networkInboundTitle,
-            desc: l10n.networkInboundDesc,
-            icon: LucideIcons.arrowDownLeft,
-            mode: _networkInboundMode,
-            onModeChanged: (mode) => setState(() => _networkInboundMode = mode),
-            items: _networkInboundList,
-            inputController: _networkInboundInputController,
-            inputHint: placeholder,
-            onAdd: () => _addNetworkAddress(
-              _networkInboundInputController,
-              _networkInboundList,
-              l10n,
-            ),
-            onRemove: (index) =>
-                setState(() => _networkInboundList.removeAt(index)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 添加网络地址的通用方法（含校验）
-  void _addNetworkAddress(
-    TextEditingController controller,
-    List<String> list,
-    AppLocalizations l10n,
-  ) {
-    final addr = controller.text.trim();
-    if (addr.isEmpty) return;
-    if (list.contains(addr)) return;
-    // 当 macOS 沙箱启用时，校验地址是否符合 sandbox-exec 限制
-    if (isRuntimeMacOS &&
-        _sandboxEnabled &&
-        !NetworkPermissionConfig.isValidSandboxAddress(addr)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.networkAddressInvalidForSandbox),
-          backgroundColor: const Color(0xFFEF4444),
-          duration: const Duration(seconds: 4),
-        ),
-      );
-      return;
-    }
-    setState(() => list.add(addr));
-    controller.clear();
-  }
-
   Future<void> _handlePathBrowse(AppLocalizations l10n) async {
     try {
       final result = await FilePicker.platform.getDirectoryPath(
@@ -2423,202 +2413,84 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
     }
   }
 
-  /// 构建单方向的网络配置子区块
-  Widget _buildDirectionalNetworkBlock({
-    required String title,
-    required String desc,
-    required IconData icon,
-    required PermissionMode mode,
-    required Function(PermissionMode) onModeChanged,
-    required List<String> items,
-    required TextEditingController inputController,
-    required String inputHint,
-    required VoidCallback onAdd,
-    required Function(int) onRemove,
-  }) {
-    final l10n = AppLocalizations.of(context)!;
-
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 方向标题
-          Row(
-            children: [
-              Icon(icon, color: Colors.white70, size: 14),
-              const SizedBox(width: 6),
-              Text(
-                title,
-                style: AppFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  desc,
-                  style: AppFonts.inter(fontSize: 10, color: Colors.white38),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          // 黑白名单切换
-          Row(
-            children: [
-              _buildModeButton(
-                label: l10n.blacklistMode,
-                isSelected: mode == PermissionMode.blacklist,
-                onTap: () => onModeChanged(PermissionMode.blacklist),
-              ),
-              const SizedBox(width: 8),
-              _buildModeButton(
-                label: l10n.whitelistMode,
-                isSelected: mode == PermissionMode.whitelist,
-                onTap: () => onModeChanged(PermissionMode.whitelist),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          // 输入框
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.1),
-                    ),
-                  ),
-                  child: TextField(
-                    controller: inputController,
-                    style: AppFonts.firaCode(fontSize: 12, color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: inputHint,
-                      hintStyle: AppFonts.inter(
-                        fontSize: 11,
-                        color: Colors.white38,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                    ),
-                    onSubmitted: (_) => onAdd(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  onTap: onAdd,
-                  child: Container(
-                    height: 38,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6366F1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Icon(
-                      LucideIcons.plus,
-                      size: 14,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          // 已添加的项
-          if (items.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: items.asMap().entries.map((entry) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: mode == PermissionMode.blacklist
-                        ? const Color(0xFFEF4444).withValues(alpha: 0.2)
-                        : const Color(0xFF22C55E).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: mode == PermissionMode.blacklist
-                          ? const Color(0xFFEF4444).withValues(alpha: 0.3)
-                          : const Color(0xFF22C55E).withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          entry.value,
-                          style: AppFonts.firaCode(
-                            fontSize: 10,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: GestureDetector(
-                          onTap: () => onRemove(entry.key),
-                          child: const Icon(
-                            LucideIcons.x,
-                            size: 10,
-                            color: Colors.white54,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        ],
-      ),
-    );
+  /// Bot 模型连通性测试，以 [_isValidatingBotModel] 驱动 footer 按钮转圈动画。
+  /// 表单层负责在切换 provider / 关闭弹窗时让此 Future 提前返回，
+  /// 避免 loading 态长时间残留。
+  Future<void> _handleValidateBotModelConnection() async {
+    if (_isSaving || _isValidatingBotModel) return;
+    setState(() {
+      _isValidatingBotModel = true;
+    });
+    try {
+      await _botModelFormKey.currentState?.validateConnection();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isValidatingBotModel = false;
+        });
+      }
+    }
   }
 
   Widget _buildFooter(AppLocalizations l10n) {
+    final bool isBotTabSelected =
+        _requiresBotModelConfig && _tabController.index == (_botTabIndex ?? -1);
+    final bool busy = _isSaving || _isValidatingBotModel;
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         TextButton(
-          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+          onPressed: busy ? null : () => Navigator.of(context).pop(),
           child: Text(
             l10n.cancel,
             style: AppFonts.inter(
-              color: _isSaving ? Colors.white24 : Colors.white54,
+              color: busy ? Colors.white24 : Colors.white54,
             ),
           ),
         ),
         const SizedBox(width: 12),
+        if (isBotTabSelected) ...[
+          OutlinedButton(
+            onPressed: busy ? null : _handleValidateBotModelConnection,
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+              foregroundColor: busy ? Colors.white24 : Colors.white70,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            child: _isValidatingBotModel
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        l10n.modelConfigTesting,
+                        style: AppFonts.inter(
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    l10n.modelConfigValidateConnection,
+                    style: AppFonts.inter(
+                      fontWeight: FontWeight.w500,
+                      color: busy ? Colors.white24 : Colors.white70,
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 12),
+        ],
         ElevatedButton(
-          onPressed: _isSaving ? null : _saveConfig,
+          onPressed: busy ? null : _saveConfig,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF6366F1),
             disabledBackgroundColor: const Color(

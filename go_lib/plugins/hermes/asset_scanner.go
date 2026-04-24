@@ -61,6 +61,9 @@ func (s *HermesAssetScanner) enrichAssetWithConfig(asset *core.Asset) {
 	asset.Metadata["model_base_url"] = strings.TrimSpace(cfg.Model.BaseURL)
 	asset.Metadata["terminal_backend"] = strings.TrimSpace(cfg.Terminal.Backend)
 	asset.Metadata["approvals_mode"] = strings.TrimSpace(cfg.Approvals.Mode)
+	if version := getHermesVersion(); version != "" {
+		asset.Version = version
+	}
 	if cfg.Security.RedactSecrets != nil {
 		if *cfg.Security.RedactSecrets {
 			asset.Metadata["redact_secrets"] = "true"
@@ -120,7 +123,7 @@ func (s *HermesAssetScanner) rewriteStableAssetID(asset *core.Asset) {
 		configPath = strings.TrimSpace(s.configPath)
 	}
 	previous := strings.TrimSpace(asset.ID)
-	asset.ID = core.ComputeAssetID(hermesAssetName, configPath, nil, nil)
+	asset.ID = core.ComputeAssetID(hermesAssetName, configPath)
 	if previous != "" && previous != asset.ID {
 		logging.Info("[HermesScanner] rewrote volatile asset_id %s -> %s", previous, asset.ID)
 	}

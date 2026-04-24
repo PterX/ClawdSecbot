@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -110,8 +109,9 @@ func (p *OpenclawPlugin) ScanAssets() ([]core.Asset, error) {
 }
 
 // AssessRisks 对已发现的资产进行风险评估
-func (p *OpenclawPlugin) AssessRisks(scannedHashes map[string]bool) ([]core.Risk, error) {
+func (p *OpenclawPlugin) AssessRisks(scannedHashes map[string]bool, assets []core.Asset) ([]core.Risk, error) {
 	logging.Info("OpenclawPlugin: Assessing risks")
+	_ = assets
 
 	risks := []core.Risk{}
 
@@ -135,10 +135,6 @@ func (p *OpenclawPlugin) AssessRisks(scannedHashes map[string]bool) ([]core.Risk
 	checkLogging(*config, configPath, &risks)
 	checkDangerousGatewayFlags(*config, rawConfig, &risks)
 
-	version := getOpenClawVersion()
-	checkOneClickRCEVulnerabilityByVersion(version, &risks)
-	checkConfigPatchLevelByVersion(version, &risks)
-
 	// 已隐藏：配置文件中明文密钥检测，不再向用户展示此项风险
 	// checkCredentialsInConfig(configPath, &risks)
 
@@ -159,6 +155,14 @@ func (p *OpenclawPlugin) AssessRisks(scannedHashes map[string]bool) ([]core.Risk
 // MitigateRisk handles risk mitigation requests for Openclaw-specific risks.
 func (p *OpenclawPlugin) MitigateRisk(riskInfo string) string {
 	return MitigateRiskDispatch(riskInfo)
+}
+
+func (p *OpenclawPlugin) GetVulnInfoJSON() []byte {
+	return GetVulInfoJSON()
+}
+
+func (p *OpenclawPlugin) CompareVulnerabilityVersion(current, target string) (int, bool) {
+	return compareOpenClawVersion(current, target)
 }
 
 // StartProtection 启动指定资产实例的防护
@@ -339,7 +343,7 @@ func (p *OpenclawPlugin) OnBeforeProxyStop(ctx *core.ProtectionContext) {
 	backupDir := ctx.BackupDir
 	if backupDir == "" {
 		homeDir, _ := os.UserHomeDir()
-		backupDir = filepath.Join(homeDir, ".botsec", "backups")
+		backupDir = core.ResolveBackupDir(homeDir)
 	}
 
 	_ = backupDir // 保留兼容路径推导，当前退出恢复不依赖初始整文件备份。

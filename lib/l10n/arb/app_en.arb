@@ -140,6 +140,16 @@
       "version": {"type": "String"}
     }
   },
+  "riskOpenclawInsecureOrDangerousFlags": "Insecure or Dangerous Gateway Flags Enabled",
+  "riskOpenclawInsecureOrDangerousFlagsDesc": "Detected OpenClaw gateway flags that weaken authentication or origin trust protections. Disable these flags unless you have a strict, verified threat-model exception.",
+  "riskOpenclawConfigPatchOutdated": "OpenClaw Config Security Patches Missing",
+  "riskOpenclawConfigPatchOutdatedDesc": "Current OpenClaw version ({currentVersion}) is missing published configuration-security fixes. Upgrade to version {requiredVersion} or later immediately.",
+  "@riskOpenclawConfigPatchOutdatedDesc": {
+    "placeholders": {
+      "currentVersion": {"type": "String"},
+      "requiredVersion": {"type": "String"}
+    }
+  },
 
   "riskSkillsNotScanned": "Skills Not Scanned for Prompt Injection",
   "riskSkillsNotScannedDesc": "{count} skill(s) have not been scanned for prompt injection risks: {skills}. Click to scan.",
@@ -269,6 +279,8 @@
   "modelConfigSaveFailed": "Failed to save configuration",
   "modelConfigRequired": "Please configure AI model to continue",
   "modelConfigTesting": "Testing...",
+  "modelConfigValidateConnection": "Validate Connectivity",
+  "modelConfigTestSuccess": "Connectivity validation succeeded",
   "modelConfigSaving": "Saving...",
   "modelConfigTestFailed": "Connection test failed: {error}",
   "@modelConfigTestFailed": {
@@ -737,6 +749,7 @@
   "tokenLimitTip": "When token usage exceeds the configured limit, the proxy will return an over-limit error and terminate the current session to prevent excessive resource consumption.",
   "tokenUnitK": "K",
   "tokenUnitM": "M",
+  "tokenUnitBase": "tokens",
   "tokenPresetLabel": "Quick select",
   "tokenNoLimit": "No limit",
   "tokenPreset50K": "50K",
@@ -1010,6 +1023,7 @@
     }
   },
   "exitRestoreConfirm": "Restore and Exit",
+  "exitRestoreExitOnly": "Exit Only",
   "exitWithoutRestoreConfirm": "Exit Without Restoring",
   "exitRestoreInProgress": "Restoring the Bot's default service. Please wait...",
   "exitRestoreFailedTitle": "Restore Failed, Exit Cancelled",
@@ -1078,6 +1092,10 @@
   "eventBlocked": "Blocked",
   "eventToolExecution": "Tool Execution",
   "eventOther": "Other Event",
+  "eventTypeWarning": "Warning",
+  "riskTypeQuota": "Quota Limited",
+  "riskTypeSandboxBlocked": "Sandbox Blocked",
+  "riskTypeNeedsConfirmation": "Needs Confirmation",
   "eventTime": "Time",
   "eventActionDesc": "Action",
   "eventRiskType": "Risk Type",

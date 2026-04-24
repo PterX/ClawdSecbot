@@ -82,7 +82,7 @@ func TestRewriteStableAssetID_FallbackToScannerConfigPath(t *testing.T) {
 	asset := &core.Asset{ID: "volatile", Metadata: map[string]string{}}
 	scanner.rewriteStableAssetID(asset)
 
-	want := core.ComputeAssetID(hermesAssetName, "/tmp/hermes/config.yaml", nil, nil)
+	want := core.ComputeAssetID(hermesAssetName, "/tmp/hermes/config.yaml")
 	if asset.ID != want {
 		t.Fatalf("asset id mismatch: got=%s want=%s", asset.ID, want)
 	}

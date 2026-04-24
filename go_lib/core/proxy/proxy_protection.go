@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,6 +85,9 @@ type ProxyProtection struct {
 	// TruthRecord 存储（SSOT），替代原 RequestViewStore + AuditLogBuffer
 	records *RecordStore
 
+	// Chain audit tracker: one user instruction + toolcall/toolresult chain -> one audit log.
+	auditTracker *AuditChainTracker
+
 	// Analysis statistics
 	analysisCount int
 	blockedCount  int
@@ -119,7 +121,19 @@ type ProxyProtection struct {
 	currentRequestID string
 	requestStartTime time.Time
 	auditMu          sync.Mutex
+
+	// requestCtxToID binds a request context to a stable request ID to avoid
+	// cross-request contamination when multiple requests run concurrently.
+	requestCtxMu   sync.Mutex
+	requestCtxToID map[context.Context]requestContextBinding
 }
+
+type requestContextBinding struct {
+	RequestID string
+	ExpiresAt time.Time
+}
+
+const requestContextBindingTTL = 2 * time.Hour
 
 // proxyInstance is the singleton proxy protection instance
 var (
@@ -481,7 +495,9 @@ func NewProxyProtectionFromConfig(protectionConfig *ProtectionConfig, logChan ch
 		streamBuffer:            NewStreamBuffer(),
 		logChan:                 logChan,
 		records:                 NewRecordStore(),
+		auditTracker:            NewAuditChainTracker(),
 		recoveryMu:              &sync.Mutex{},
+		requestCtxToID:          make(map[context.Context]requestContextBinding),
 	}
 
 	// Initialize statistics with baselines from config
@@ -777,6 +793,24 @@ func (pp *ProxyProtection) emitMonitorSecurityDecision(status, reason string, bl
 	})
 }
 
+// emitSecurityEvent persists a SecurityEvent for the protection monitor's event panel.
+// Must be co-located with any proxy-level interception (blockedCount++, quota/sandbox
+// block) so the "intercept count" and "event list" remain monotonically consistent.
+// Source is fixed to "react_agent" to align with the existing UI badge taxonomy.
+// Fail-open: persistence failures inside AddSecurityEvent must not block the proxy flow.
+func (pp *ProxyProtection) emitSecurityEvent(requestID, eventType, actionDesc, riskType, detail string) {
+	shepherd.GetSecurityEventBuffer().AddSecurityEvent(shepherd.SecurityEvent{
+		EventType:  eventType,
+		ActionDesc: actionDesc,
+		RiskType:   riskType,
+		Detail:     detail,
+		Source:     "react_agent",
+		AssetName:  pp.assetName,
+		AssetID:    pp.assetID,
+		RequestID:  requestID,
+	})
+}
+
 func (pp *ProxyProtection) emitMonitorResponseReturned(status, returnedText, returnedRaw string) {
 	pp.sendLog("monitor_response_returned", map[string]interface{}{
 		"status":                status,
@@ -872,6 +906,85 @@ func (pp *ProxyProtection) activeRequestID() string {
 	return strings.TrimSpace(pp.currentRequestID)
 }
 
+func (pp *ProxyProtection) bindRequestContext(ctx context.Context, requestID string) {
+	if pp == nil || ctx == nil {
+		return
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		logging.Info("[AuditChain] bind request context skipped: reason=empty_request_id")
+		return
+	}
+
+	now := time.Now()
+	pp.requestCtxMu.Lock()
+	defer pp.requestCtxMu.Unlock()
+
+	if pp.requestCtxToID == nil {
+		pp.requestCtxToID = make(map[context.Context]requestContextBinding)
+	}
+	for key, binding := range pp.requestCtxToID {
+		if now.After(binding.ExpiresAt) {
+			delete(pp.requestCtxToID, key)
+		}
+	}
+	pp.requestCtxToID[ctx] = requestContextBinding{
+		RequestID: requestID,
+		ExpiresAt: now.Add(requestContextBindingTTL),
+	}
+	logging.Info("[AuditChain] bind request context: request_id=%s", requestID)
+}
+
+func (pp *ProxyProtection) clearRequestContext(ctx context.Context) {
+	if pp == nil || ctx == nil {
+		return
+	}
+	pp.requestCtxMu.Lock()
+	defer pp.requestCtxMu.Unlock()
+	if pp.requestCtxToID == nil {
+		return
+	}
+	if binding, ok := pp.requestCtxToID[ctx]; ok {
+		delete(pp.requestCtxToID, ctx)
+		logging.Info("[AuditChain] clear request context: request_id=%s", strings.TrimSpace(binding.RequestID))
+		return
+	}
+	logging.Info("[AuditChain] clear request context skipped: reason=context_not_found")
+}
+
+func (pp *ProxyProtection) requestIDFromContext(ctx context.Context) string {
+	if pp == nil {
+		return ""
+	}
+	now := time.Now()
+	if ctx != nil {
+		pp.requestCtxMu.Lock()
+		if pp.requestCtxToID != nil {
+			for key, binding := range pp.requestCtxToID {
+				if now.After(binding.ExpiresAt) {
+					delete(pp.requestCtxToID, key)
+				}
+			}
+			if binding, ok := pp.requestCtxToID[ctx]; ok {
+				requestID := strings.TrimSpace(binding.RequestID)
+				pp.requestCtxMu.Unlock()
+				if requestID != "" {
+					logging.Info("[AuditChain] resolve request_id from context: request_id=%s", requestID)
+					return requestID
+				}
+			}
+		}
+		pp.requestCtxMu.Unlock()
+	}
+	fallbackID := pp.activeRequestID()
+	if fallbackID != "" {
+		logging.Info("[AuditChain] resolve request_id fallback: request_id=%s source=active_request", fallbackID)
+	} else {
+		logging.Info("[AuditChain] resolve request_id failed: source=context_and_active_empty")
+	}
+	return fallbackID
+}
+
 func (pp *ProxyProtection) sendTerminalLog(message string) {
 	pp.auditMu.Lock()
 	reqID := pp.currentRequestID
@@ -955,6 +1068,7 @@ func (pp *ProxyProtection) finalizeTruthRecord(requestID string, outputContent s
 				Arguments:   truncateToBytes(tc.Function.Arguments, maxRecordToolArgsBytes),
 				IsSensitive: isSensitive,
 				Source:      "response",
+				LatestRound: true,
 			})
 		}
 	})
@@ -1094,7 +1208,7 @@ func (pp *ProxyProtection) GetBackupDir() string {
 		return pm.GetBackupDir()
 	}
 	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".botsec", "backups")
+	return core.ResolveBackupDir(homeDir)
 }
 
 // GetProxyProtection 获取全局代理防护实例

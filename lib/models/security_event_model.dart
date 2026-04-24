@@ -68,6 +68,9 @@ class SecurityEvent {
   /// 是否为工具执行事件
   bool get isToolExecution => eventType == 'tool_execution';
 
+  /// 是否为待用户确认事件（NEEDS_CONFIRMATION 决策）
+  bool get isNeedsConfirmation => eventType == 'needs_confirmation';
+
   /// 是否来自 ReAct Agent
   bool get isFromReactAgent => source == 'react_agent';
 

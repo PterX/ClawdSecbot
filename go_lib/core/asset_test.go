@@ -191,59 +191,45 @@ func TestAssetEmpty(t *testing.T) {
 	}
 }
 
-func TestComputeAssetID_DeterministicAndOrderInsensitive(t *testing.T) {
-	id1 := ComputeAssetID(
-		"Openclaw",
-		"/Users/test/.openclaw/config.json",
-		[]int{3000, 13436},
-		[]string{"/usr/local/bin/openclaw", "/Applications/Openclaw.app"},
-	)
-	id2 := ComputeAssetID(
-		"openclaw",
-		"/Users/test/.openclaw/config.json",
-		[]int{13436, 3000},
-		[]string{"/Applications/Openclaw.app", "/usr/local/bin/openclaw"},
-	)
+func TestComputeAssetID_DeterministicAndCaseInsensitive(t *testing.T) {
+	id1 := ComputeAssetID("Openclaw", "/Users/test/.openclaw/config.json")
+	id2 := ComputeAssetID("openclaw", "/Users/test/.openclaw/config.json")
 
 	if id1 != id2 {
 		t.Fatalf("expected deterministic id, got id1=%s id2=%s", id1, id2)
 	}
 }
 
+// TestComputeAssetID_IgnoresRuntimeDynamics guards the invariant that
+// ports/process_paths or any other runtime-dynamic info must NOT drift the ID
+// when the bot starts/stops. The ID depends only on name + config_path.
+func TestComputeAssetID_IgnoresRuntimeDynamics(t *testing.T) {
+	// Before protection starts: bot not running, no ports/processes observed.
+	idBeforeStart := ComputeAssetID("Openclaw", "/Users/test/.openclaw/config.json")
+	// After protection restarts openclaw: the same instance now exposes ports
+	// and process paths. ID must not change.
+	idAfterStart := ComputeAssetID("Openclaw", "/Users/test/.openclaw/config.json")
+
+	if idBeforeStart != idAfterStart {
+		t.Fatalf("asset_id must be stable across runtime state changes, got before=%s after=%s",
+			idBeforeStart, idAfterStart)
+	}
+}
+
 func TestComputeAssetID_UniqueAcrossPlugins(t *testing.T) {
-	openID := ComputeAssetID(
-		"Openclaw",
-		"/Users/test/.bot/config.json",
-		[]int{3000},
-		[]string{"/usr/local/bin/bot"},
-	)
-	nullID := ComputeAssetID(
-		"Nullclaw",
-		"/Users/test/.bot/config.json",
-		[]int{3000},
-		[]string{"/usr/local/bin/bot"},
-	)
+	openID := ComputeAssetID("Openclaw", "/Users/test/.bot/config.json")
+	nullID := ComputeAssetID("Nullclaw", "/Users/test/.bot/config.json")
 
 	if openID == nullID {
 		t.Fatalf("asset id collision across plugin types: %s", openID)
 	}
 }
 
-func TestComputeAssetID_UniqueForDifferentFingerprint(t *testing.T) {
-	id1 := ComputeAssetID(
-		"Openclaw",
-		"/Users/test/.openclaw/config-a.json",
-		[]int{3000},
-		[]string{"/usr/local/bin/openclaw"},
-	)
-	id2 := ComputeAssetID(
-		"Openclaw",
-		"/Users/test/.openclaw/config-b.json",
-		[]int{3000},
-		[]string{"/usr/local/bin/openclaw"},
-	)
+func TestComputeAssetID_UniqueForDifferentConfigPath(t *testing.T) {
+	id1 := ComputeAssetID("Openclaw", "/Users/test/.openclaw/config-a.json")
+	id2 := ComputeAssetID("Openclaw", "/Users/test/.openclaw/config-b.json")
 
 	if id1 == id2 {
-		t.Fatalf("expected different ids for different fingerprint, got %s", id1)
+		t.Fatalf("expected different ids for different config_path, got %s", id1)
 	}
 }

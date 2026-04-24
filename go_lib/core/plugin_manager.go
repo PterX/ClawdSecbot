@@ -16,6 +16,7 @@ import (
 type AssetPluginInstance struct {
 	AssetID   string `json:"asset_id"`
 	AssetName string `json:"asset_name"`
+	Asset     Asset  `json:"asset"`
 	plugin    BotPlugin
 }
 
@@ -43,6 +44,15 @@ func GetPluginManager() *PluginManager {
 		}
 	})
 	return globalPluginManager
+}
+
+// ResetForTest 清空插件管理器的注册与实例表，仅供测试使用。
+// 保留单例本身不重建，避免与外部持有的引用失配。
+func (pm *PluginManager) ResetForTest() {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.registeredPlugins = make(map[string]BotPlugin)
+	pm.instances = make(map[string]*AssetPluginInstance)
 }
 
 // Register 注册插件类型能力（按资产名称唯一）
@@ -147,6 +157,7 @@ func (pm *PluginManager) bindAssetInstance(plugin BotPlugin, asset Asset) {
 	pm.instances[assetID] = &AssetPluginInstance{
 		AssetID:   assetID,
 		AssetName: assetName,
+		Asset:     asset,
 		plugin:    plugin,
 	}
 }
@@ -181,12 +192,18 @@ func (pm *PluginManager) ScanAllAssets() ([]Asset, error) {
 			continue
 		}
 
+		scannedAssetIDs := make(map[string]struct{}, len(assets))
 		for i := range assets {
 			if strings.TrimSpace(assets[i].SourcePlugin) == "" {
 				assets[i].SourcePlugin = assetName
 			}
+			assetID := strings.TrimSpace(assets[i].ID)
+			if assetID != "" {
+				scannedAssetIDs[assetID] = struct{}{}
+			}
 			pm.bindAssetInstance(plugin, assets[i])
 		}
+		pm.reconcilePluginInstances(assetName, scannedAssetIDs)
 
 		logging.Info("Plugin %s found %d assets", assetName, len(assets))
 		allAssets = append(allAssets, assets...)
@@ -197,7 +214,7 @@ func (pm *PluginManager) ScanAllAssets() ([]Asset, error) {
 }
 
 // AssessAllRisks evaluates risks via all registered plugins.
-// Automatically injects SourcePlugin into each risk for downstream routing.
+// Automatically injects SourcePlugin and best-effort asset_id for downstream routing.
 func (pm *PluginManager) AssessAllRisks(scannedHashes map[string]bool) ([]Risk, error) {
 	plugins := pm.GetAllPlugins()
 	logging.Info("Starting risk assessment with %d plugins", len(plugins))
@@ -205,11 +222,20 @@ func (pm *PluginManager) AssessAllRisks(scannedHashes map[string]bool) ([]Risk, 
 	var allRisks []Risk
 	for _, plugin := range plugins {
 		assetName := plugin.GetAssetName()
+		singleAssetID := pm.getSingleAssetIDByPlugin(assetName)
 		logging.Info("Assessing risks with plugin: %s", assetName)
-		risks, err := plugin.AssessRisks(scannedHashes)
+		pluginAssets := pm.getAssetsByPlugin(assetName)
+		risks, err := plugin.AssessRisks(scannedHashes, pluginAssets)
 		if err != nil {
 			logging.Warning("Plugin %s risk assessment failed: %v", assetName, err)
 			continue
+		}
+
+		vulnRisks, err := BuildVulnerabilityRisks(plugin, pluginAssets)
+		if err != nil {
+			logging.Warning("Plugin %s vulnerability matching failed: %v", assetName, err)
+		} else {
+			risks = append(risks, vulnRisks...)
 		}
 
 		for i := range risks {
@@ -220,6 +246,19 @@ func (pm *PluginManager) AssessAllRisks(scannedHashes map[string]bool) ([]Risk, 
 			if _, exists := risks[i].Args["asset_name"]; !exists {
 				risks[i].Args["asset_name"] = assetName
 			}
+			riskAssetID := normalizeRiskAssetID(risks[i].AssetID)
+			if riskAssetID == "" {
+				riskAssetID = normalizeRiskAssetID(anyToString(risks[i].Args["asset_id"]))
+			}
+			if riskAssetID == "" {
+				riskAssetID = singleAssetID
+			}
+			if riskAssetID != "" {
+				risks[i].AssetID = riskAssetID
+				if _, exists := risks[i].Args["asset_id"]; !exists {
+					risks[i].Args["asset_id"] = riskAssetID
+				}
+			}
 		}
 		logging.Info("Plugin %s found %d risks", assetName, len(risks))
 		allRisks = append(allRisks, risks...)
@@ -229,26 +268,64 @@ func (pm *PluginManager) AssessAllRisks(scannedHashes map[string]bool) ([]Risk, 
 	return allRisks, nil
 }
 
-// MitigateRisk routes a mitigation request to the appropriate plugin.
-// The riskInfoJSON must contain a "source_plugin" field identifying which plugin handles it.
+func (pm *PluginManager) getAssetsByPlugin(assetName string) []Asset {
+	key := normalizeAssetName(assetName)
+	if key == "" {
+		return []Asset{}
+	}
+
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	assets := make([]Asset, 0)
+	for _, inst := range pm.instances {
+		if inst == nil {
+			continue
+		}
+		instKey := normalizeAssetName(inst.AssetName)
+		if instKey == "" && inst.plugin != nil {
+			instKey = normalizeAssetName(inst.plugin.GetAssetName())
+		}
+		if instKey != key {
+			continue
+		}
+		assets = append(assets, inst.Asset)
+	}
+	return assets
+}
+
+// MitigateRisk routes a mitigation request by asset_id to the corresponding plugin instance.
 func (pm *PluginManager) MitigateRisk(riskInfoJSON string) string {
 	var req map[string]interface{}
 	if err := json.Unmarshal([]byte(riskInfoJSON), &req); err != nil {
 		return mitigationErrorResult("invalid json")
 	}
 
-	sourcePlugin, _ := req["source_plugin"].(string)
-	sourcePlugin = strings.TrimSpace(sourcePlugin)
-	if sourcePlugin == "" {
-		return mitigationErrorResult("source_plugin is required")
+	assetID := normalizeRiskAssetID(anyToString(req["asset_id"]))
+	if assetID == "" {
+		if args, ok := req["args"].(map[string]interface{}); ok {
+			assetID = normalizeRiskAssetID(anyToString(args["asset_id"]))
+		}
+	}
+	if assetID == "" {
+		return mitigationErrorResult("asset_id is required")
 	}
 
-	plugin := pm.GetPluginByAssetName(sourcePlugin)
-	if plugin == nil {
-		return mitigationErrorResult("no plugin found for: " + sourcePlugin)
+	inst, err := pm.resolvePluginInstance(assetID)
+	if err != nil {
+		return mitigationErrorResult(err.Error())
 	}
 
-	return normalizeMitigationResponse(plugin.MitigateRisk(riskInfoJSON))
+	req["asset_id"] = assetID
+	if _, exists := req["source_plugin"]; !exists {
+		req["source_plugin"] = inst.AssetName
+	}
+
+	normalizedReq, err := json.Marshal(req)
+	if err != nil {
+		return mitigationErrorResult("invalid mitigation payload")
+	}
+	return normalizeMitigationResponse(inst.plugin.MitigateRisk(string(normalizedReq)))
 }
 
 func mitigationErrorResult(message string) string {
@@ -292,6 +369,81 @@ func normalizeMitigationResponse(raw string) string {
 		return mitigationErrorResult("failed to encode mitigation response")
 	}
 	return string(b)
+}
+
+func (pm *PluginManager) reconcilePluginInstances(assetName string, scannedAssetIDs map[string]struct{}) {
+	key := normalizeAssetName(assetName)
+	if key == "" {
+		return
+	}
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	for assetID, inst := range pm.instances {
+		if inst == nil {
+			delete(pm.instances, assetID)
+			continue
+		}
+
+		instKey := normalizeAssetName(inst.AssetName)
+		if instKey == "" && inst.plugin != nil {
+			instKey = normalizeAssetName(inst.plugin.GetAssetName())
+		}
+		if instKey != key {
+			continue
+		}
+
+		if _, exists := scannedAssetIDs[strings.TrimSpace(assetID)]; exists {
+			continue
+		}
+
+		delete(pm.instances, assetID)
+		logging.Info("Pruned stale plugin instance: plugin=%s, assetID=%s", assetName, assetID)
+	}
+}
+
+func (pm *PluginManager) getSingleAssetIDByPlugin(assetName string) string {
+	key := normalizeAssetName(assetName)
+	if key == "" {
+		return ""
+	}
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	count := 0
+	singleID := ""
+	for assetID, inst := range pm.instances {
+		if inst == nil {
+			continue
+		}
+		instKey := normalizeAssetName(inst.AssetName)
+		if instKey == "" && inst.plugin != nil {
+			instKey = normalizeAssetName(inst.plugin.GetAssetName())
+		}
+		if instKey != key {
+			continue
+		}
+		count++
+		singleID = strings.TrimSpace(assetID)
+		if count > 1 {
+			return ""
+		}
+	}
+	return singleID
+}
+
+func anyToString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+func normalizeRiskAssetID(assetID string) string {
+	return strings.TrimSpace(assetID)
 }
 
 func (pm *PluginManager) getAllPluginsDeterministic() []BotPlugin {

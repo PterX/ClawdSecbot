@@ -176,6 +176,16 @@
       "version": {"type": "String"}
     }
   },
+  "riskOpenclawInsecureOrDangerousFlags": "网关启用了不安全或危险选项",
+  "riskOpenclawInsecureOrDangerousFlagsDesc": "检测到 OpenClaw 网关配置中启用了会削弱认证或来源信任保护的危险选项。除非有严格且已验证的威胁模型豁免，否则应立即关闭这些选项。",
+  "riskOpenclawConfigPatchOutdated": "OpenClaw 配置安全补丁缺失",
+  "riskOpenclawConfigPatchOutdatedDesc": "当前 OpenClaw 版本（{currentVersion}）缺少已发布的配置安全修复。请立即升级到 {requiredVersion} 或更高版本。",
+  "@riskOpenclawConfigPatchOutdatedDesc": {
+    "placeholders": {
+      "currentVersion": {"type": "String"},
+      "requiredVersion": {"type": "String"}
+    }
+  },
 
   "riskSkillsNotScanned": "Skills 未进行提示词注入扫描",
   "riskSkillsNotScannedDesc": "{count} 个 Skill 尚未进行提示词注入风险扫描: {skills}。点击执行扫描。",
@@ -316,6 +326,8 @@
   "modelConfigSaveFailed": "保存配置失败",
   "modelConfigRequired": "请先配置 AI 模型才能继续使用",
   "modelConfigTesting": "测试连接中...",
+  "modelConfigValidateConnection": "验证连通性",
+  "modelConfigTestSuccess": "连通性验证通过",
   "modelConfigSaving": "保存中...",
   "modelConfigTestFailed": "连接测试失败: {error}",
   "@modelConfigTestFailed": {
@@ -784,6 +796,7 @@
   "tokenLimitTip": "当Token使用超过设定上限时，代理会返回超限错误并终止当前会话，防止过度消耗资源。",
   "tokenUnitK": "千",
   "tokenUnitM": "百万",
+  "tokenUnitBase": "个",
   "tokenPresetLabel": "快捷选择",
   "tokenNoLimit": "不限制",
   "tokenPreset50K": "5万",
@@ -1057,6 +1070,7 @@
     }
   },
   "exitRestoreConfirm": "恢复并退出",
+  "exitRestoreExitOnly": "仅退出",
   "exitWithoutRestoreConfirm": "不恢复直接退出",
   "exitRestoreInProgress": "正在恢复 Bot 默认服务，请稍候...",
   "exitRestoreFailedTitle": "恢复失败，已取消退出",
@@ -1125,6 +1139,10 @@
   "eventBlocked": "已拦截",
   "eventToolExecution": "工具执行",
   "eventOther": "其他事件",
+  "eventTypeWarning": "告警",
+  "riskTypeQuota": "配额限制",
+  "riskTypeSandboxBlocked": "沙箱拦截",
+  "riskTypeNeedsConfirmation": "待确认",
   "eventTime": "时间",
   "eventActionDesc": "动作描述",
   "eventRiskType": "风险类型",
