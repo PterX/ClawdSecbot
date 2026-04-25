@@ -542,37 +542,30 @@ func (r *ProtectionRepository) ClearProtectionStatistics(assetID string) error {
 
 // --- Shepherd Rules ---
 
-// GetShepherdSensitiveActions 获取指定资产实例的Shepherd敏感操作列表
-func (r *ProtectionRepository) GetShepherdSensitiveActions(assetName string, assetID string) ([]string, bool, error) {
+// GetShepherdRulesRaw returns the stored Shepherd rules JSON for an asset.
+func (r *ProtectionRepository) GetShepherdRulesRaw(assetID string) (string, bool, error) {
 	if r.db == nil {
-		return nil, false, fmt.Errorf("database not initialized")
+		return "", false, fmt.Errorf("database not initialized")
 	}
-	_ = assetName
 	assetID = strings.TrimSpace(assetID)
 	if assetID == "" {
-		return nil, false, fmt.Errorf("asset_id is required")
+		return "", false, fmt.Errorf("asset_id is required")
 	}
-
 	row := r.db.QueryRow(`SELECT sensitive_actions FROM shepherd_rules WHERE asset_id = ?`, assetID)
-
 	var raw sql.NullString
 	err := row.Scan(&raw)
-	if err == sql.ErrNoRows || !raw.Valid || raw.String == "" {
-		return []string{}, false, nil
+	if err == sql.ErrNoRows || !raw.Valid || strings.TrimSpace(raw.String) == "" {
+		return "", false, nil
 	}
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to get shepherd rules: %w", err)
+		return "", false, fmt.Errorf("failed to get shepherd rules: %w", err)
 	}
-
-	var actions []string
-	if err := json.Unmarshal([]byte(raw.String), &actions); err != nil {
-		return []string{}, true, nil
-	}
-	return normalizeShepherdActions(actions), true, nil
+	return raw.String, true, nil
 }
 
-// SaveShepherdSensitiveActions 保存指定资产实例的Shepherd敏感操作列表
-func (r *ProtectionRepository) SaveShepherdSensitiveActions(assetName, assetID string, actions []string) error {
+// SaveShepherdRulesRaw saves a full Shepherd rules JSON object in the existing
+// shepherd_rules storage column.
+func (r *ProtectionRepository) SaveShepherdRulesRaw(assetName, assetID, rulesJSON string) error {
 	if r.db == nil {
 		return fmt.Errorf("database not initialized")
 	}
@@ -580,26 +573,22 @@ func (r *ProtectionRepository) SaveShepherdSensitiveActions(assetName, assetID s
 	if assetID == "" {
 		return fmt.Errorf("asset_id is required")
 	}
-
-	jsonStr, err := json.Marshal(normalizeShepherdActions(actions))
-	if err != nil {
-		return fmt.Errorf("failed to marshal shepherd rules: %w", err)
+	if !json.Valid([]byte(rulesJSON)) {
+		return fmt.Errorf("shepherd rules json is invalid")
 	}
-
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err = r.db.Exec(`
+	_, err := r.db.Exec(`
 		INSERT OR REPLACE INTO shepherd_rules (asset_id, asset_name, sensitive_actions, updated_at)
 		VALUES (?, ?, ?, ?)
-	`, assetID, assetName, string(jsonStr), now)
+	`, assetID, assetName, strings.TrimSpace(rulesJSON), now)
 	if err != nil {
 		return fmt.Errorf("failed to save shepherd rules: %w", err)
 	}
-
 	return nil
 }
 
-// DeleteShepherdSensitiveActions 删除指定资产实例的Shepherd敏感操作配置。
-func (r *ProtectionRepository) DeleteShepherdSensitiveActions(assetID string) error {
+// DeleteShepherdRules deletes Shepherd rules for the specified asset instance.
+func (r *ProtectionRepository) DeleteShepherdRules(assetID string) error {
 	if r.db == nil {
 		return fmt.Errorf("database not initialized")
 	}
@@ -613,23 +602,6 @@ func (r *ProtectionRepository) DeleteShepherdSensitiveActions(assetID string) er
 		return fmt.Errorf("failed to delete shepherd rules: %w", err)
 	}
 	return nil
-}
-
-func normalizeShepherdActions(actions []string) []string {
-	seen := make(map[string]struct{}, len(actions))
-	normalized := make([]string, 0, len(actions))
-	for _, action := range actions {
-		trimmed := strings.TrimSpace(action)
-		if trimmed == "" {
-			continue
-		}
-		if _, ok := seen[trimmed]; ok {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		normalized = append(normalized, trimmed)
-	}
-	return normalized
 }
 
 // --- ClearAllData ---

@@ -18,9 +18,11 @@ import (
 type stubChatModelForProxy struct {
 	generateResp *schema.Message
 	generateErr  error
+	called       bool
 }
 
 func (m *stubChatModelForProxy) Generate(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+	m.called = true
 	if m.generateErr != nil {
 		return nil, m.generateErr
 	}

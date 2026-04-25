@@ -259,30 +259,46 @@ class ProtectionDatabaseService {
 
   // --- Shepherd Rules methods ---
 
-  Future<List<String>> getShepherdSensitiveActions(
+  Future<List<String>> getShepherdRules(
     String assetName,
     String assetID,
   ) async {
-    final result = _callFFIOneArg('GetShepherdSensitiveActionsFFI', assetID);
+    final result = _callFFIOneArg('GetShepherdRulesFFI', assetID);
     if (result['success'] != true) return [];
 
     final data = result['data'];
-    if (data == null || data is! List) return [];
+    if (data is! Map) return [];
+    final rawRules = data['semantic_rules'];
+    if (rawRules is! List) return [];
 
-    return data.cast<String>();
+    return rawRules
+        .whereType<Map>()
+        .map((rule) => (rule['description'] ?? rule['id'] ?? '').toString())
+        .where((value) => value.trim().isNotEmpty)
+        .toList(growable: false);
   }
 
-  Future<void> saveShepherdSensitiveActions(
+  Future<void> saveShepherdRules(
     String assetName,
     String assetID,
-    List<String> actions,
+    List<String> ruleDescriptions,
   ) async {
     final result = _callFFI(
-      'SaveShepherdSensitiveActionsFFI',
+      'SaveShepherdRulesFFI',
       jsonEncode({
         'asset_name': assetName,
         'asset_id': assetID,
-        'actions': actions,
+        'semantic_rules': [
+          for (final entry in ruleDescriptions.asMap().entries)
+            {
+              'id': 'user_rule_${entry.key + 1}',
+              'enabled': true,
+              'description': entry.value,
+              'applies_to': ['tool_call', 'tool_call_result', 'final_result'],
+              'action': 'needs_confirmation',
+              'risk_type': 'HIGH_RISK_OPERATION',
+            },
+        ],
       }),
     );
 
@@ -393,10 +409,11 @@ class ProtectionDatabaseService {
       return 'empty';
     }
 
-    final fingerprints = configs
-        .map((config) => _buildProtectionConfigFingerprint(config))
-        .toList()
-      ..sort();
+    final fingerprints =
+        configs
+            .map((config) => _buildProtectionConfigFingerprint(config))
+            .toList()
+          ..sort();
     return fingerprints.join('||');
   }
 

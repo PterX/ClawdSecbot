@@ -304,9 +304,6 @@ func rewriteRawResponseToolCallIDs(raw string, resp *openai.ChatCompletion) (str
 			break
 		}
 		respToolCalls := resp.Choices[i].Message.ToolCalls
-		if len(respToolCalls) == 0 {
-			continue
-		}
 
 		choiceMap, ok := choice.(map[string]interface{})
 		if !ok {
@@ -316,8 +313,13 @@ func rewriteRawResponseToolCallIDs(raw string, resp *openai.ChatCompletion) (str
 		if !ok {
 			return "", false, fmt.Errorf("raw choices[%d].message is not an object", i)
 		}
+		respContent := resp.Choices[i].Message.Content
+		if respContent != "" && stringValue(messageMap["content"]) != respContent {
+			messageMap["content"] = respContent
+			changed = true
+		}
 		rawToolCalls, ok := messageMap["tool_calls"].([]interface{})
-		if !ok {
+		if !ok && len(respToolCalls) > 0 {
 			return "", false, fmt.Errorf("raw choices[%d].message.tool_calls is not an array", i)
 		}
 
@@ -371,9 +373,6 @@ func rewriteRawChunkToolCallIDs(raw string, chunk *openai.ChatCompletionChunk) (
 			break
 		}
 		respToolCalls := chunk.Choices[i].Delta.ToolCalls
-		if len(respToolCalls) == 0 {
-			continue
-		}
 
 		choiceMap, ok := choice.(map[string]interface{})
 		if !ok {
@@ -382,6 +381,14 @@ func rewriteRawChunkToolCallIDs(raw string, chunk *openai.ChatCompletionChunk) (
 		deltaMap, ok := choiceMap["delta"].(map[string]interface{})
 		if !ok {
 			return "", false, fmt.Errorf("raw chunk choices[%d].delta is not an object", i)
+		}
+		respContent := chunk.Choices[i].Delta.Content
+		if respContent != "" && stringValue(deltaMap["content"]) != respContent {
+			deltaMap["content"] = respContent
+			changed = true
+		}
+		if len(respToolCalls) == 0 {
+			continue
 		}
 		rawToolCalls, ok := deltaMap["tool_calls"].([]interface{})
 		if !ok {

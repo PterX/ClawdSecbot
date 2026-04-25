@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/openai/openai-go"
@@ -47,9 +46,9 @@ func analyzeRequestProtocol(requestID string, messages []openai.ChatCompletionMe
 			})
 		}
 		result.LatestAssistantIndex = i
-		result.TerminalLogs = append(result.TerminalLogs, fmt.Sprintf("找到最新的 assistant tool_calls 在索引 %d: %d 个工具调用", i, len(result.LatestAssistantToolCall)))
+		result.TerminalLogs = append(result.TerminalLogs, formatSecurityFlowLog(securityFlowStageToolCall, "latest assistant tool_calls found: index=%d count=%d", i, len(result.LatestAssistantToolCall)))
 		for idx, tc := range result.LatestAssistantToolCall {
-			result.TerminalLogs = append(result.TerminalLogs, fmt.Sprintf("  [%d] ID=%s", idx, tc.ID))
+			result.TerminalLogs = append(result.TerminalLogs, formatSecurityFlowLog(securityFlowStageToolCall, "latest assistant tool_call: index=%d id=%s", idx, tc.ID))
 		}
 
 		hasToolsFollowing := false
@@ -57,19 +56,19 @@ func analyzeRequestProtocol(requestID string, messages []openai.ChatCompletionMe
 			if messages[j].OfTool != nil {
 				hasToolsFollowing = true
 			} else if messages[j].OfUser != nil {
-				result.TerminalLogs = append(result.TerminalLogs, fmt.Sprintf("在索引 %d 发现用户消息,说明工具结果已被处理,不触发检测", j))
+				result.TerminalLogs = append(result.TerminalLogs, formatSecurityFlowLog(securityFlowStageToolCallResult, "tool results already consumed by later user message: index=%d", j))
 				result.LatestAssistantToolCall = nil
 				result.LatestAssistantIndex = -1
 				break
 			}
 		}
 		if hasToolsFollowing && result.LatestAssistantIndex >= 0 {
-			result.TerminalLogs = append(result.TerminalLogs, "工具调用后紧接着是工具结果,且之后没有用户消息,将触发检测")
+			result.TerminalLogs = append(result.TerminalLogs, formatSecurityFlowLog(securityFlowStageToolCallResult, "tool results follow latest assistant tool_calls; detection will run"))
 		}
 		break
 	}
 	if len(result.LatestAssistantToolCall) == 0 {
-		result.TerminalLogs = append(result.TerminalLogs, "未找到需要检测的 assistant tool_calls")
+		result.TerminalLogs = append(result.TerminalLogs, formatSecurityFlowLog(securityFlowStageToolCall, "no assistant tool_calls require detection"))
 	}
 
 	analyzeInlineToolProtocol(requestID, messages, &result)
@@ -111,7 +110,7 @@ func analyzeInlineToolProtocol(requestID string, messages []openai.ChatCompletio
 					RawArgs:  it.RawArgs,
 				})
 			}
-			result.TerminalLogs = append(result.TerminalLogs, fmt.Sprintf("[InlineTool] Found %d inline <tool_use> in message at index %d", len(inlineTools), i))
+			result.TerminalLogs = append(result.TerminalLogs, formatSecurityFlowLog(securityFlowStageToolCall, "inline tool_use found: count=%d message_index=%d", len(inlineTools), i))
 
 			result.InlineToolResults = make(map[string]string)
 			consumed := false
@@ -127,7 +126,7 @@ func analyzeInlineToolProtocol(requestID string, messages []openai.ChatCompletio
 							result.ToolResultIndices = append(result.ToolResultIndices, i)
 						}
 					}
-					result.TerminalLogs = append(result.TerminalLogs, fmt.Sprintf("[InlineTool] Found %d inline <tool_result> in same user message at index %d", len(sameResults), i))
+					result.TerminalLogs = append(result.TerminalLogs, formatSecurityFlowLog(securityFlowStageToolCallResult, "inline tool_result found in same user message: count=%d message_index=%d", len(sameResults), i))
 				}
 			}
 
@@ -137,7 +136,7 @@ func analyzeInlineToolProtocol(requestID string, messages []openai.ChatCompletio
 					nextContent := extractMessageContent(nextMsg)
 					if hasInlineToolUse(nextContent) && !hasInlineToolResult(nextContent) {
 						consumed = true
-						result.TerminalLogs = append(result.TerminalLogs, fmt.Sprintf("[InlineTool] New <tool_use> cycle in user message at index %d, previous results consumed", j))
+						result.TerminalLogs = append(result.TerminalLogs, formatSecurityFlowLog(securityFlowStageToolCallResult, "new inline tool_use cycle found; previous results consumed: message_index=%d", j))
 						break
 					}
 					inlineResults := extractInlineToolResults(nextContent)
@@ -150,13 +149,13 @@ func analyzeInlineToolProtocol(requestID string, messages []openai.ChatCompletio
 								result.ToolResultIndices = append(result.ToolResultIndices, j)
 							}
 						}
-						result.TerminalLogs = append(result.TerminalLogs, fmt.Sprintf("[InlineTool] Found %d inline <tool_result> in user at index %d", len(inlineResults), j))
+						result.TerminalLogs = append(result.TerminalLogs, formatSecurityFlowLog(securityFlowStageToolCallResult, "inline tool_result found in user message: count=%d message_index=%d", len(inlineResults), j))
 					}
 				} else if nextMsg.OfAssistant != nil {
 					nextAssistContent := extractMessageContent(nextMsg)
 					if !hasInlineToolUse(nextAssistContent) {
 						consumed = true
-						result.TerminalLogs = append(result.TerminalLogs, fmt.Sprintf("[InlineTool] Inline tool results consumed by assistant at index %d", j))
+						result.TerminalLogs = append(result.TerminalLogs, formatSecurityFlowLog(securityFlowStageToolCallResult, "inline tool results consumed by assistant: message_index=%d", j))
 					}
 					break
 				}
@@ -201,7 +200,7 @@ func analyzeInlineToolProtocol(requestID string, messages []openai.ChatCompletio
 			result.InlineToolResults[synID] = toolResult
 			result.ToolResultIndices = append(result.ToolResultIndices, i)
 		}
-		result.TerminalLogs = append(result.TerminalLogs, fmt.Sprintf("[InlineTool] Found %d orphan <tool_result> in user message at index %d (no matching <tool_use>)", len(toolResults), i))
+		result.TerminalLogs = append(result.TerminalLogs, formatSecurityFlowLog(securityFlowStageToolCallResult, "orphan inline tool_result found without matching tool_use: count=%d message_index=%d", len(toolResults), i))
 		break
 	}
 }

@@ -79,7 +79,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
   static const String _botModelUpdatingMessage =
       '正在更新Openclaw配置，$_dashboardReconnectHint';
 
-  static const Map<String, String> _zhSensitiveActionLabels = {
+  static const Map<String, String> _zhSemanticRuleLabels = {
     'delete': '删除',
     'remove': '移除',
     'drop': '删除（数据库）',
@@ -206,8 +206,8 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
   String _savingProgressMessage = _defaultSavingMessage;
 
   // Shepherd User Rules
-  final List<String> _sensitiveActions = [];
-  final TextEditingController _sensitiveActionsInputController =
+  final List<String> _semanticRules = [];
+  final TextEditingController _semanticRulesInputController =
       TextEditingController();
   // 临时关闭用户自定义规则配置区，保留实现便于后续恢复。
   static const bool _showUserCustomRulesSection = false;
@@ -304,7 +304,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
     _pathInputController.dispose();
     _networkOutboundInputController.dispose();
     _shellInputController.dispose();
-    _sensitiveActionsInputController.dispose();
+    _semanticRulesInputController.dispose();
     super.dispose();
   }
 
@@ -381,15 +381,17 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
       // Load Shepherd Rules
       final rules = fallbackToDefaultPolicy
           ? <String, List<String>>{
-              'sensitiveActions': await protectionDatabaseService
-                  .getShepherdSensitiveActions(widget.assetName, ''),
+              'semanticRules': await protectionDatabaseService.getShepherdRules(
+                widget.assetName,
+                '',
+              ),
             }
           : await pluginService.loadAndSyncShepherdRules(
               widget.assetName,
               widget.assetID,
             );
-      _sensitiveActions.clear();
-      _sensitiveActions.addAll(rules['sensitiveActions'] ?? const []);
+      _semanticRules.clear();
+      _semanticRules.addAll(rules['semanticRules'] ?? const []);
 
       // Load bundled ReAct skills
       _bundledSkills = pluginService.listBundledReActSkills();
@@ -699,7 +701,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
       await PluginService().updateShepherdRules(
         widget.assetName,
         ruleAssetID,
-        _sensitiveActions,
+        _semanticRules,
       );
 
       final newConfig = _config.copyWith(
@@ -1079,7 +1081,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
           _buildAuditOnlySwitch(l10n),
           const SizedBox(height: 16),
 
-          // Shepherd User Rules（标题 + 敏感操作，整体框起来）
+          // Shepherd User Rules（标题 + 语义规则，整体框起来）
           if (_showUserCustomRulesSection)
             Container(
               padding: const EdgeInsets.all(12),
@@ -1140,7 +1142,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
                             ),
                           ),
                           child: TextField(
-                            controller: _sensitiveActionsInputController,
+                            controller: _semanticRulesInputController,
                             style: AppFonts.firaCode(
                               fontSize: 12,
                               color: Colors.white,
@@ -1158,12 +1160,12 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
                               ),
                             ),
                             onSubmitted: (_) {
-                              final val = _sensitiveActionsInputController.text
+                              final val = _semanticRulesInputController.text
                                   .trim();
                               if (val.isNotEmpty &&
-                                  !_sensitiveActions.contains(val)) {
-                                setState(() => _sensitiveActions.add(val));
-                                _sensitiveActionsInputController.clear();
+                                  !_semanticRules.contains(val)) {
+                                setState(() => _semanticRules.add(val));
+                                _semanticRulesInputController.clear();
                                 _saveConfig(closeOnSave: false);
                               }
                             },
@@ -1175,12 +1177,12 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
                         cursor: SystemMouseCursors.click,
                         child: GestureDetector(
                           onTap: () {
-                            final val = _sensitiveActionsInputController.text
+                            final val = _semanticRulesInputController.text
                                 .trim();
                             if (val.isNotEmpty &&
-                                !_sensitiveActions.contains(val)) {
-                              setState(() => _sensitiveActions.add(val));
-                              _sensitiveActionsInputController.clear();
+                                !_semanticRules.contains(val)) {
+                              setState(() => _semanticRules.add(val));
+                              _semanticRulesInputController.clear();
                               _saveConfig(closeOnSave: false);
                             }
                           },
@@ -1203,13 +1205,13 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
                   ),
 
                   // Items
-                  if (_sensitiveActions.isNotEmpty) ...[
+                  if (_semanticRules.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: _sensitiveActions.asMap().entries.map((entry) {
-                        final localized = _localizeSensitiveActionForDisplay(
+                      children: _semanticRules.asMap().entries.map((entry) {
+                        final localized = _localizeSemanticRuleForDisplay(
                           entry.value,
                           l10n,
                         );
@@ -1250,8 +1252,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
                                 child: GestureDetector(
                                   onTap: () {
                                     setState(
-                                      () =>
-                                          _sensitiveActions.removeAt(entry.key),
+                                      () => _semanticRules.removeAt(entry.key),
                                     );
                                     _saveConfig(closeOnSave: false);
                                   },
@@ -1419,38 +1420,36 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
     );
   }
 
-  String _localizeSensitiveActionForDisplay(
-    String rawAction,
+  String _localizeSemanticRuleForDisplay(
+    String rawRule,
     AppLocalizations l10n,
   ) {
     if (!l10n.localeName.startsWith('zh')) {
-      return rawAction;
+      return rawRule;
     }
-    final normalized = rawAction.trim().toLowerCase();
+    final normalized = rawRule.trim().toLowerCase();
     if (normalized.isEmpty) {
-      return rawAction;
+      return rawRule;
     }
 
     // Match bundled default user rules by sentence template.
     if (normalized.startsWith(
       'writing to or modifying critical system files or files outside the project workspace',
     )) {
-      return '写入或修改关键系统文件，或修改项目工作区之外的文件属于敏感操作（说明：在项目内创建/编辑文件不属于敏感操作）';
+      return '写入或修改关键系统文件，或修改项目工作区之外的文件需要确认（说明：在项目内创建/编辑文件不需要确认）';
     }
     if (normalized.startsWith(
       'sending emails, messages, or notifications to external recipients',
     )) {
-      return '向外部接收方发送邮件、消息或通知属于敏感操作（说明：仅“读取”邮件/消息不属于敏感操作）';
+      return '向外部接收方发送邮件、消息或通知需要确认';
     }
-    if (normalized.startsWith(
-      'executing potentially dangerous shell commands',
-    )) {
-      return '执行潜在危险的 Shell 命令属于敏感操作（如 rm -rf /、chmod、systemctl）；常规开发命令（如 mkdir、touch、构建工具）及只读命令不属于敏感操作';
+    if (normalized.startsWith('executing dangerous shell commands')) {
+      return '执行潜在危险的 Shell 命令需要确认（如 rm -rf /、chmod、systemctl）';
     }
     if (normalized.startsWith(
       'changing global system settings or configuration',
     )) {
-      return '修改全局系统设置或配置属于敏感操作';
+      return '修改全局系统设置或配置需要确认';
     }
     if (normalized.startsWith(
       'reading/writing memory.md, memory/yyyy-mm-dd.md, agents.md, tools.md is considered safe',
@@ -1466,7 +1465,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
       return '任何支付或转账操作都需要用户确认';
     }
 
-    return _zhSensitiveActionLabels[normalized] ?? rawAction;
+    return _zhSemanticRuleLabels[normalized] ?? rawRule;
   }
 
   String _localizeBundledSkillNameForDisplay(

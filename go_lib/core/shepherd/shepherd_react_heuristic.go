@@ -11,22 +11,9 @@ import (
 // analyzeHeuristically performs heuristic fast detection on tool_calls and their results.
 // Returns nil if no heuristic pattern matched, meaning LLM analysis is needed.
 func (a *ToolCallReActAnalyzer) analyzeHeuristically(session *toolCallAnalysisSession, rules *UserRules) *ReactRiskDecision {
-	var sensitiveActions []string
-	if rules != nil {
-		sensitiveActions = rules.SensitiveActions
-	}
+	_ = rules
 
 	for _, tc := range session.ToolCalls {
-		if len(sensitiveActions) > 0 && isSensitiveByRules(tc.Name, sensitiveActions) {
-			return &ReactRiskDecision{
-				Allowed:    false,
-				Reason:     fmt.Sprintf("Tool '%s' matches user-defined sensitive action rule.", tc.Name),
-				RiskLevel:  "high",
-				Confidence: 95,
-				Skill:      "general_tool_risk_guard",
-			}
-		}
-
 		if reason := detectCriticalCommand(tc.RawArgs); reason != "" {
 			return &ReactRiskDecision{
 				Allowed:    false,
@@ -52,26 +39,6 @@ func (a *ToolCallReActAnalyzer) analyzeHeuristically(session *toolCallAnalysisSe
 	}
 
 	return nil
-}
-
-func isSensitiveByRules(toolName string, sensitiveActions []string) bool {
-	toolName = strings.ToLower(strings.TrimSpace(toolName))
-	for _, action := range sensitiveActions {
-		rule := strings.ToLower(strings.TrimSpace(action))
-		if rule == "" {
-			continue
-		}
-		if rule == toolName {
-			return true
-		}
-		if strings.Contains(rule, "*") {
-			re := "^" + strings.ReplaceAll(regexp.QuoteMeta(rule), `\*`, ".*") + "$"
-			if matched, _ := regexp.MatchString(re, toolName); matched {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // ==================== Critical command detection ====================

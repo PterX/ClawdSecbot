@@ -58,7 +58,7 @@ GetSecurityEventCountFFI
 GetSecurityEventsByRequestIDFFI
 GetSecurityEventsFFI
 GetSecurityModelConfigFFI
-GetShepherdSensitiveActionsFFI
+GetShepherdRulesFFI
 GetSkillScanByHash
 GetSkillSecurityScanLog
 GetSkillSecurityScanResult
@@ -90,7 +90,7 @@ SaveProtectionStatisticsFFI
 SaveScanResult
 SaveSecurityEventsBatchFFI
 SaveSecurityModelConfigFFI
-SaveShepherdSensitiveActionsFFI
+SaveShepherdRulesFFI
 SaveSkillScanResult
 ScanAssetsFFI
 SetLanguageFFI

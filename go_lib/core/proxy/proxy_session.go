@@ -11,6 +11,7 @@ import (
 	"go_lib/core"
 	"go_lib/core/logging"
 	"go_lib/core/repository"
+	"go_lib/core/shepherd"
 )
 
 // ProxyStartResponse represents the response from starting the proxy
@@ -767,8 +768,8 @@ func WaitForProtectionLogsInternal(sessionID string, timeoutMs int) string {
 
 // UpdateShepherdRulesByAssetInternal updates Shepherd rules for a specific asset instance.
 func UpdateShepherdRulesByAssetInternal(assetID, rulesJSON string) string {
-	var rules UserRules
-	if err := json.Unmarshal([]byte(rulesJSON), &rules); err != nil {
+	rules, err := shepherd.DecodeUserRulesJSON([]byte(rulesJSON))
+	if err != nil {
 		logging.Error("[ShepherdGate] Failed to parse rules JSON: %v", err)
 		return "error: parse failed"
 	}
@@ -780,7 +781,7 @@ func UpdateShepherdRulesByAssetInternal(assetID, rulesJSON string) string {
 		return "ok"
 	}
 
-	if err := pp.UpdateShepherdRules(rules.SensitiveActions); err != nil {
+	if err := pp.UpdateShepherdUserRules(rules); err != nil {
 		logging.Error("[ShepherdGate] Failed to update rules by asset (id=%s): %v", assetID, err)
 		return "error: update failed"
 	}
@@ -793,13 +794,13 @@ func GetShepherdRulesByAssetInternal(assetID string) string {
 	pp := proxyByAssetKey[buildAssetKey(assetID)]
 	proxyInstanceMu.Unlock()
 	if pp == nil {
-		return `{"SensitiveActions":[]}`
+		return `{"semantic_rules":[]}`
 	}
 	rules := pp.GetShepherdRules()
 	data, err := json.Marshal(rules)
 	if err != nil {
 		logging.Error("[ShepherdGate] Failed to marshal rules: %v", err)
-		return `{"SensitiveActions":[]}`
+		return `{"semantic_rules":[]}`
 	}
 	return string(data)
 }

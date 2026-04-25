@@ -301,7 +301,7 @@ func createGuardValidateCommand() func(string) error {
 
 		for _, op := range []string{"|", ">", "<", ";", "&&", "||", "`", "$("} {
 			if strings.Contains(command, op) {
-				logging.ShepherdGateWarning("[ShepherdGate][ValidateCommand] blocked: forbidden operator '%s' in: %s", op, command)
+				logging.ShepherdGateWarning("%s[react][ValidateCommand] blocked: forbidden_operator=%q command=%s", shepherdFlowLogPrefix, op, command)
 				return fmt.Errorf("command contains forbidden shell operator '%s'", op)
 			}
 		}
@@ -312,7 +312,7 @@ func createGuardValidateCommand() func(string) error {
 		}
 		baseCmd := fields[0]
 		if _, ok := whitelist[baseCmd]; !ok {
-			logging.ShepherdGateWarning("[ShepherdGate][ValidateCommand] rejected non-whitelisted command: %s", baseCmd)
+			logging.ShepherdGateWarning("%s[react][ValidateCommand] rejected non_whitelisted_command=%s", shepherdFlowLogPrefix, baseCmd)
 			return fmt.Errorf("command '%s' is not in whitelist", baseCmd)
 		}
 

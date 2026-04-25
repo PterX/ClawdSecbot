@@ -48,7 +48,7 @@ func TestNormalizeReactRiskDecisionConsistency(t *testing.T) {
 	t.Run("non-low risk decision should remain unchanged", func(t *testing.T) {
 		input := &ReactRiskDecision{
 			Allowed:    false,
-			Reason:     "sensitive operation requires confirmation",
+			Reason:     "semantic rule requires confirmation",
 			RiskLevel:  "medium",
 			Confidence: 90,
 		}
@@ -60,15 +60,15 @@ func TestNormalizeReactRiskDecisionConsistency(t *testing.T) {
 		if output.Allowed {
 			t.Fatalf("expected medium-risk blocked decision to remain blocked")
 		}
-		if output.Reason != "sensitive operation requires confirmation" {
+		if output.Reason != "semantic rule requires confirmation" {
 			t.Fatalf("expected reason unchanged, got=%q", output.Reason)
 		}
 	})
 
-	t.Run("low risk sensitive rule block should remain blocked", func(t *testing.T) {
+	t.Run("low risk semantic rule block should remain blocked", func(t *testing.T) {
 		input := &ReactRiskDecision{
 			Allowed:    false,
-			Reason:     "Tool call matches user-defined sensitive action rule",
+			Reason:     "Tool call matches user-defined semantic rule",
 			RiskLevel:  "low",
 			Confidence: 88,
 		}
@@ -78,9 +78,9 @@ func TestNormalizeReactRiskDecisionConsistency(t *testing.T) {
 			t.Fatalf("expected non-nil decision")
 		}
 		if output.Allowed {
-			t.Fatalf("expected sensitive-rule block to remain blocked")
+			t.Fatalf("expected semantic-rule block to remain blocked")
 		}
-		if output.Reason != "Tool call matches user-defined sensitive action rule" {
+		if output.Reason != "Tool call matches user-defined semantic rule" {
 			t.Fatalf("expected reason unchanged, got=%q", output.Reason)
 		}
 	})
@@ -312,18 +312,6 @@ func TestHeuristicOnlyCriticalAndSensitive(t *testing.T) {
 		t.Fatalf("expected critical command to be blocked")
 	}
 
-	// User-defined sensitive rules should trigger block
-	session2 := &toolCallAnalysisSession{
-		ToolCalls: []ToolCallInfo{
-			{Name: "send_email", RawArgs: `{"to":"anyone"}`},
-		},
-	}
-	rules := &UserRules{SensitiveActions: []string{"send_email"}}
-	decision2 := analyzer.analyzeHeuristically(session2, rules)
-	if decision2 == nil || decision2.Allowed {
-		t.Fatalf("expected sensitive rule match to be blocked")
-	}
-
 	// Non-critical commands without rule matches should pass (return nil)
 	session3 := &toolCallAnalysisSession{
 		Context: []ConversationMessage{
@@ -335,7 +323,7 @@ func TestHeuristicOnlyCriticalAndSensitive(t *testing.T) {
 	}
 	decision3 := analyzer.analyzeHeuristically(session3, nil)
 	if decision3 != nil {
-		t.Fatalf("expected nil (no heuristic block) for non-critical command without sensitive rules, got=%+v", decision3)
+		t.Fatalf("expected nil (no heuristic block) for non-critical command without semantic rules, got=%+v", decision3)
 	}
 
 	// Normal script execution should not be blocked by heuristic (left to LLM)
@@ -365,11 +353,13 @@ func TestBuildGuardSystemPromptNoSkillCatalogInjection(t *testing.T) {
 		t.Fatalf("prompt should not include concrete skill metadata")
 	}
 
-	// Test with user-defined sensitive rules
-	rules := &UserRules{SensitiveActions: []string{"send_email", "delete_*"}}
+	// Test with user-defined semantic rules
+	rules := &UserRules{SemanticRules: []SemanticRule{
+		{ID: "send_email", Enabled: true, Description: "Sending email requires confirmation", AppliesTo: []string{"tool_call"}},
+	}}
 	promptWithRules := analyzer.buildGuardSystemPrompt(rules, "en")
-	if !strings.Contains(promptWithRules, "send_email") {
-		t.Fatalf("expected prompt to contain user-defined sensitive action 'send_email'")
+	if !strings.Contains(promptWithRules, "Sending email requires confirmation") {
+		t.Fatalf("expected prompt to contain user-defined semantic rule")
 	}
 }
 

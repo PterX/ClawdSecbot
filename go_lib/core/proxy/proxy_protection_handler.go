@@ -69,7 +69,7 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 	if pp.shepherdGate != nil {
 		securityModel = pp.shepherdGate.GetModelName()
 	}
-	logging.Info("[ProxyProtection] onRequest: model=%s, messageCount=%d, requestID=%s, securityModel=%s, botTargetURL=%s", modelName, len(req.Messages), requestID, securityModel, pp.targetURL)
+	logSecurityFlowInfo(securityFlowStageRequest, "received request: model=%s message_count=%d request_id=%s security_model=%s bot_target_url=%s", modelName, len(req.Messages), requestID, securityModel, pp.targetURL)
 	pp.sendLog("proxy_request_info", map[string]interface{}{
 		"model":        modelName,
 		"messageCount": len(req.Messages),
@@ -82,18 +82,12 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 	for _, msg := range req.Messages {
 		roles = append(roles, getMessageRole(msg))
 	}
-	pp.sendTerminalLog(fmt.Sprintf("请求消息角色: %v", roles))
+	pp.sendSecurityFlowLog(securityFlowStageRequest, "message_roles=%v", roles)
 
 	// ==================== 工具结果检测逻辑 ====================
 	protocol := analyzeRequestProtocol(requestID, req.Messages)
-	for _, line := range protocol.TerminalLogs {
-		pp.sendTerminalLog(line)
-	}
 	toolCallsInHistory := protocol.ToolCallsInHistory
 	latestAssistantToolCalls := protocol.LatestAssistantToolCall
-	latestAssistantIndex := protocol.LatestAssistantIndex
-	hasToolResultMessages := protocol.HasToolResultMessages
-	toolResultIndices := protocol.ToolResultIndices
 	isInlineToolProtocol := protocol.IsInlineToolProtocol
 	inlineToolResultsMap := protocol.InlineToolResults
 	latestRoundTCIDs := protocol.LatestRoundToolCallIDs
@@ -164,48 +158,6 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 			}
 		}
 
-		if msg.OfTool != nil {
-			toolCallID := msg.OfTool.ToolCallID
-			toolContent := content
-			if len(toolContent) > 300 {
-				toolContent = truncateString(toolContent, 300)
-			}
-			pp.updateTruthRecord(requestID, func(r *TruthRecord) {
-				applyRecordPrimaryContent(r, RecordContentToolResult, toolContent, false)
-			})
-			pp.sendTerminalLog(fmt.Sprintf("发现 tool 消息在索引 %d，tool_call_id=%s", i, toolCallID))
-
-			if latestAssistantIndex >= 0 && i > latestAssistantIndex {
-				if len(latestAssistantToolCalls) > 0 {
-					matched := false
-					for _, tc := range latestAssistantToolCalls {
-						if tc.ID == toolCallID {
-							pp.sendTerminalLog(fmt.Sprintf("✓ tool_call_id 匹配成功且在最新 assistant 之后: %s", toolCallID))
-							pp.sendLog("proxy_tool_result_content", map[string]interface{}{
-								"index":   i,
-								"tool_id": toolCallID,
-								"content": toolContent,
-							})
-							pp.sendLog("monitor_upstream_tool_result", map[string]interface{}{
-								"tool_id": toolCallID,
-								"summary": pp.previewToolResult(toolContent),
-							})
-							hasToolResultMessages = true
-							toolResultIndices = append(toolResultIndices, i)
-							matched = true
-							break
-						}
-					}
-					if !matched {
-						pp.sendTerminalLog(fmt.Sprintf("✗ tool_call_id 不匹配,跳过此历史 tool 消息: %s", toolCallID))
-					}
-				} else {
-					pp.sendTerminalLog("✗ 没有最新的 assistant tool_calls,跳过此 tool 消息")
-				}
-			} else {
-				pp.sendTerminalLog(fmt.Sprintf("✗ tool 消息在索引 %d,但最新 assistant 在索引 %d,这是历史 tool 消息,跳过", i, latestAssistantIndex))
-			}
-		}
 	}
 
 	toolResultsMap := collectTailToolResults(req.Messages)
@@ -215,6 +167,7 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 			toolResultsMap[id] = result
 		}
 	}
+	hasToolResultMessages := len(toolResultsMap) > 0
 	tailToolCount, tailToolWithID, tailToolMissingID, tailToolIDs := summarizeTailToolMessages(req.Messages)
 	lastRole := ""
 	if len(req.Messages) > 0 {
@@ -273,11 +226,35 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 		})
 	}
 
-	_ = toolResultIndices
-	pp.sendTerminalLog(fmt.Sprintf("检测触发判断: hasToolResultMessages=%v, 工具结果数量=%d", hasToolResultMessages, len(toolResultIndices)))
+	pp.sendSecurityFlowLog(securityFlowStageToolCallResult, "trigger_check: has_tool_results=%v tool_result_count=%d latest_tool_calls=%d", hasToolResultMessages, len(toolResultsMap), len(latestAssistantToolCalls))
 
 	pp.streamBuffer.ClearAll()
 	pp.streamBuffer.SetRequest(requestID, req, rawBody)
+
+	pp.recoverPendingToolCallRecoveryFromHistory(req.Messages)
+	hadPendingRecoveryBeforeArm := pp.hasPendingToolCallRecovery()
+	recoveryArmedForRequest := pp.armPendingRecoveryFromRequest(pp.ctx, req.Messages)
+	recoveryRejectedForRequest := hadPendingRecoveryBeforeArm && !recoveryArmedForRequest && !pp.hasPendingToolCallRecovery()
+	recoveryRequiresToolResult := recoveryArmedForRequest && pp.pendingRecoveryRequiresToolResult()
+	if recoveryArmedForRequest {
+		pp.sendSecurityFlowLog(securityFlowStageRecovery, "user confirmation recognized; skipping user_input policy for this recovery request")
+		pp.sendLog("proxy_pending_tool_recovery_armed", map[string]interface{}{
+			"armed": true,
+		})
+	} else if recoveryRejectedForRequest {
+		pp.sendSecurityFlowLog(securityFlowStageRecovery, "user rejection recognized; skipping user_input policy and keeping quarantined tool results isolated")
+		pp.sendLog("proxy_pending_tool_recovery_rejected", map[string]interface{}{
+			"rejected": true,
+		})
+	} else {
+		userInputPolicyResult := pp.runUserInputPolicyHooks(ctx, userInputPolicyContext{
+			RequestID: requestID,
+			Messages:  req.Messages,
+		})
+		if userInputPolicyResult.Handled {
+			return userInputPolicyResult.Result, userInputPolicyResult.Pass
+		}
+	}
 
 	// ==================== ShepherdGate 安全检测 ====================
 	toolPolicyResult := pp.runToolResultPolicyHooks(ctx, toolResultPolicyContext{
@@ -289,14 +266,25 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 	if toolPolicyResult.Handled {
 		return toolPolicyResult.Result, toolPolicyResult.Pass
 	}
-
-	if pp.armPendingRecoveryFromRequest(pp.ctx, req.Messages) {
-		pp.sendTerminalLog("🔄 已识别用户确认，下一次请求将自动放行被拦截的工具结果")
-		pp.sendLog("proxy_pending_tool_recovery_armed", map[string]interface{}{
-			"armed": true,
-		})
+	if recoveryArmedForRequest && !recoveryRequiresToolResult {
+		pp.clearPendingToolCallRecovery()
+	}
+	if recoveryArmedForRequest && recoveryRequiresToolResult && !hasToolResultMessages {
+		toolCallIDs := pp.pendingRecoveryToolCallIDs()
+		cleared := pp.clearBlockedToolCallIDs(toolCallIDs)
+		pp.clearPendingToolCallRecovery()
+		pp.sendSecurityFlowLog(securityFlowStageRecovery, "confirmed historical recovery without tail tool results; allowing original history cleared_blocked_tool_call_ids=%d", cleared)
 	}
 
+	rewriteResult := pp.runRequestRewriteHooks(ctx, requestRewriteContext{
+		RequestID: requestID,
+		RawBody:   rawBody,
+		Messages:  req.Messages,
+	})
+
+	if rewriteResult.Rewrote {
+		return rewriteResult.Result, true
+	}
 	return nil, true
 }
 
@@ -325,10 +313,33 @@ func (pp *ProxyProtection) onResponse(ctx context.Context, resp *openai.ChatComp
 		if ensureResponseToolCallIDs(generatedToolCalls) {
 			msg.ToolCalls = generatedToolCalls
 		}
+		toolCallPolicyResult := pp.runToolCallPolicyHooks(ctx, toolCallPolicyContext{
+			RequestID: requestID,
+			ToolCalls: generatedToolCalls,
+		})
+		if toolCallPolicyResult.Handled && toolCallPolicyResult.Decision != nil {
+			return pp.applyResponseSecurityPolicyDecision(ctx, requestID, *toolCallPolicyResult.Decision, false)
+		}
+		if len(generatedToolCalls) == 0 && strings.TrimSpace(outputContent) != "" {
+			finalPolicyResult := pp.runFinalResultPolicyHooks(ctx, finalResultPolicyContext{
+				RequestID: requestID,
+				Content:   outputContent,
+			})
+			if finalPolicyResult.Handled && finalPolicyResult.Decision != nil {
+				if !finalPolicyResult.Pass {
+					return pp.applyResponseSecurityPolicyDecision(ctx, requestID, *finalPolicyResult.Decision, false)
+				}
+				if finalPolicyResult.Mutated {
+					msg.Content = finalPolicyResult.Content
+					outputContent = finalPolicyResult.Content
+					pp.recordFinalResultPolicyEvent(requestID, *finalPolicyResult.Decision)
+				}
+			}
+		}
 
-		pp.sendTerminalLog(fmt.Sprintf("onResponse: toolCalls=%d", len(msg.ToolCalls)))
+		pp.sendSecurityFlowLog(securityFlowStageToolCall, "non_stream_response tool_call_count=%d", len(msg.ToolCalls))
 		for _, tc := range msg.ToolCalls {
-			pp.sendTerminalLog(fmt.Sprintf("onResponse tool_call: %s", tc.Function.Name))
+			pp.sendSecurityFlowLog(securityFlowStageToolCall, "non_stream_response tool_call name=%s id=%s", tc.Function.Name, tc.ID)
 		}
 
 		if msg.Content != "" {
@@ -561,6 +572,24 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 	}
 
 	if choice.Delta.Content != "" {
+		finalPolicyResult := pp.runFinalResultPolicyHooks(ctx, finalResultPolicyContext{
+			RequestID: requestID,
+			Content:   choice.Delta.Content,
+			Stream:    true,
+		})
+		if finalPolicyResult.Handled && finalPolicyResult.Decision != nil {
+			if !finalPolicyResult.Pass {
+				securityMsg := pp.formatPolicySecurityMessage(*finalPolicyResult.Decision)
+				choice.Delta.Content = securityMsg
+				choice.FinishReason = "stop"
+				return pp.applyResponseSecurityPolicyDecision(ctx, requestID, *finalPolicyResult.Decision, true)
+			}
+			if finalPolicyResult.Mutated {
+				choice.Delta.Content = finalPolicyResult.Content
+				pp.recordFinalResultPolicyEvent(requestID, *finalPolicyResult.Decision)
+			}
+		}
+
 		if !pp.streamBuffer.started {
 			pp.streamBuffer.started = true
 			pp.sendLog("monitor_upstream_stream_started", map[string]interface{}{
@@ -623,6 +652,19 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 			}
 		}
 		if len(readyToolCalls) > 0 {
+			toolCallPolicyResult := pp.runToolCallPolicyHooks(ctx, toolCallPolicyContext{
+				RequestID: requestID,
+				ToolCalls: readyToolCalls,
+			})
+			if toolCallPolicyResult.Handled && toolCallPolicyResult.Decision != nil {
+				securityMsg := pp.formatPolicySecurityMessage(*toolCallPolicyResult.Decision)
+				choice.Delta.ToolCalls = nil
+				choice.Delta.Content = securityMsg
+				choice.FinishReason = "stop"
+				return pp.applyResponseSecurityPolicyDecision(ctx, requestID, *toolCallPolicyResult.Decision, true)
+			}
+		}
+		if len(readyToolCalls) > 0 {
 			pp.auditLogSafe("record_toolcalls_on_stream_delta", func(tracker *AuditChainTracker) {
 				tracker.RecordToolCallsForRequest(requestID, pp.assetID, readyToolCalls, pp.toolValidator)
 			})
@@ -650,7 +692,7 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 			}
 			pp.streamBuffer.mu.Unlock()
 
-			pp.sendTerminalLog(fmt.Sprintf("onStreamChunk: %d tool calls in stream", toolCallCount))
+			pp.sendSecurityFlowLog(securityFlowStageToolCall, "stream_response tool_call_count=%d", toolCallCount)
 
 			pp.metricsMu.Lock()
 			pp.totalToolCalls += toolCallCount
@@ -743,7 +785,7 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 						})
 						applyRecordPrimaryContent(r, RecordContentNoText, "Assistant generated inline tool calls.", false)
 					})
-					pp.sendTerminalLog(fmt.Sprintf("[InlineTool] Detected %d <tool_use> in stream response", len(inlineResponseTools)))
+					pp.sendSecurityFlowLog(securityFlowStageToolCall, "stream_response inline_tool_use_count=%d", len(inlineResponseTools))
 					for i, it := range inlineResponseTools {
 						pp.sendLogForRequest(requestID, "proxy_tool_call_name", map[string]interface{}{
 							"index": i,

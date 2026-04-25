@@ -115,6 +115,7 @@ type ProxyProtection struct {
 	auditTokens           int
 	auditPromptTokens     int
 	auditCompletionTokens int
+	baselineAuditTokens   int
 	totalToolCalls        int
 	requestCount          int
 	metricsMu             sync.Mutex
@@ -452,22 +453,16 @@ func NewProxyProtectionFromConfig(protectionConfig *ProtectionConfig, logChan ch
 		return nil, fmt.Errorf("failed to create shepherd gate: %w", err)
 	}
 	shepherdGate.SetAssetContext(protectionConfig.AssetName, protectionConfig.AssetID)
-	if persistedActions, found, repoErr := repository.NewProtectionRepository(nil).GetShepherdSensitiveActions(protectionConfig.AssetName, protectionConfig.AssetID); repoErr != nil {
+	if persistedRulesJSON, found, repoErr := repository.NewProtectionRepository(nil).GetShepherdRulesRaw(protectionConfig.AssetID); repoErr != nil {
 		logging.Warning("[ProxyProtection] Failed to load persisted shepherd rules for asset_id=%s: %v", protectionConfig.AssetID, repoErr)
 	} else if found {
-		shepherdGate.UpdateUserRules(persistedActions)
-	}
-	logging.Info("[ProxyProtection] Security model: Provider=%s, Model=%s", securityModel.Provider, securityModel.Model)
-	if protectionConfig.AssetName != "" {
-		repo := repository.NewProtectionRepository(nil)
-		userRules, found, err := repo.GetShepherdSensitiveActions(protectionConfig.AssetName, protectionConfig.AssetID)
-		if err != nil {
-			logging.Warning("[ProxyProtection] Failed to load instance user rules: asset=%s id=%s err=%v",
-				protectionConfig.AssetName, protectionConfig.AssetID, err)
-		} else if found {
-			shepherdGate.UpdateUserRules(userRules)
+		if persistedRules, err := shepherd.DecodeUserRulesJSON([]byte(persistedRulesJSON)); err != nil {
+			logging.Warning("[ProxyProtection] Failed to decode persisted shepherd rules for asset_id=%s: %v", protectionConfig.AssetID, err)
+		} else {
+			shepherdGate.UpdateUserRulesConfig(persistedRules)
 		}
 	}
+	logging.Info("[ProxyProtection] Security model: Provider=%s, Model=%s", securityModel.Provider, securityModel.Model)
 
 	// ==================== Runtime Config ====================
 	auditOnly := false
@@ -517,6 +512,7 @@ func NewProxyProtectionFromConfig(protectionConfig *ProtectionConfig, logChan ch
 	pp.auditTokens = protectionConfig.BaselineAuditTokens
 	pp.auditPromptTokens = protectionConfig.BaselineAuditPromptTokens
 	pp.auditCompletionTokens = protectionConfig.BaselineAuditCompletionTokens
+	pp.baselineAuditTokens = protectionConfig.BaselineAuditTokens
 
 	logging.Info("[ProxyProtection] Token limits: conversation=%d, daily=%d, initialDailyUsage=%d, auditOnly=%v",
 		pp.singleSessionTokenLimit, pp.dailyTokenLimit, pp.initialDailyUsage, pp.auditOnly)
@@ -580,32 +576,36 @@ func (pp *ProxyProtection) UpdateSecurityModelConfig(config *repository.Security
 	return nil
 }
 
-// UpdateShepherdRules updates sensitive action rules for this proxy's ShepherdGate.
-func (pp *ProxyProtection) UpdateShepherdRules(sensitiveActions []string) error {
+// UpdateShepherdUserRules updates the full Shepherd user rule set for this proxy.
+func (pp *ProxyProtection) UpdateShepherdUserRules(rules *shepherd.UserRules) error {
 	if pp.shepherdGate == nil {
 		return fmt.Errorf("ShepherdGate not initialized")
 	}
-	pp.shepherdGate.UpdateUserRules(sensitiveActions)
+	pp.shepherdGate.UpdateUserRulesConfig(rules)
 	return nil
 }
 
 // GetShepherdRules returns current ShepherdGate user rules for this proxy.
 func (pp *ProxyProtection) GetShepherdRules() *shepherd.UserRules {
 	if pp.shepherdGate == nil {
-		return &shepherd.UserRules{SensitiveActions: []string{}}
+		return &shepherd.UserRules{SemanticRules: []shepherd.SemanticRule{}}
 	}
 	return pp.shepherdGate.GetUserRules()
 }
 
-// UpdateUserRules hot-updates instance-level Shepherd rules for the active proxy.
-func (pp *ProxyProtection) UpdateUserRules(sensitiveActions []string) {
+// UpdateUserRulesConfig hot-updates structured Shepherd rules for the active proxy.
+func (pp *ProxyProtection) UpdateUserRulesConfig(rules *shepherd.UserRules) {
 	if pp == nil || pp.shepherdGate == nil {
 		return
 	}
-	pp.shepherdGate.UpdateUserRules(sensitiveActions)
-	pp.sendTerminalLog(fmt.Sprintf("Shepherd user rules updated: %d rule(s)", len(sensitiveActions)))
+	pp.shepherdGate.UpdateUserRulesConfig(rules)
+	count := 0
+	if rules != nil {
+		count = len(rules.SemanticRules)
+	}
+	pp.sendTerminalLog(fmt.Sprintf("Shepherd user rules updated: %d rule(s)", count))
 	logging.Info("[ProxyProtection] Shepherd user rules updated: asset=%s id=%s count=%d",
-		pp.assetName, pp.assetID, len(sensitiveActions))
+		pp.assetName, pp.assetID, count)
 }
 
 // updateBotForwardingProvider hot-swaps the proxy's forwarding provider
@@ -1099,6 +1099,7 @@ func (pp *ProxyProtection) ResetStatistics() {
 	pp.auditTokens = 0
 	pp.auditPromptTokens = 0
 	pp.auditCompletionTokens = 0
+	pp.baselineAuditTokens = 0
 	pp.totalToolCalls = 0
 	pp.requestCount = 0
 	pp.metricsMu.Unlock()

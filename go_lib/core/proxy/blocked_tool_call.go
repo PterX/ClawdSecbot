@@ -3,8 +3,6 @@ package proxy
 import (
 	"strings"
 	"time"
-
-	"go_lib/core/logging"
 )
 
 const blockedToolCallIDTTL = 2 * time.Hour
@@ -41,7 +39,7 @@ func (pp *ProxyProtection) markBlockedToolCallIDsAt(toolCallIDs []string, now ti
 		marked++
 	}
 	if marked > 0 {
-		logging.Info("[ProxyProtection] Blocked tool_call IDs quarantined: count=%d expires_at=%s", marked, expiresAt.Format(time.RFC3339Nano))
+		logSecurityFlowInfo(securityFlowStageQuarantine, "blocked tool_call IDs quarantined: count=%d expires_at=%s", marked, expiresAt.Format(time.RFC3339Nano))
 	}
 }
 
@@ -66,7 +64,7 @@ func (pp *ProxyProtection) clearBlockedToolCallIDs(toolCallIDs []string) int {
 		}
 	}
 	if cleared > 0 {
-		logging.Info("[ProxyProtection] Blocked tool_call IDs cleared: count=%d", cleared)
+		logSecurityFlowInfo(securityFlowStageQuarantine, "blocked tool_call IDs cleared: count=%d", cleared)
 	}
 	return cleared
 }
