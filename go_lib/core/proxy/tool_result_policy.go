@@ -36,6 +36,26 @@ func (shepherdToolResultPolicyHook) Name() string {
 	return "shepherd_tool_result"
 }
 
+func toolCallIDsFromRefs(refs []toolCallRef) []string {
+	ids := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if id := strings.TrimSpace(ref.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func toolCallIDsFromToolResults(results []ToolResultInfo) []string {
+	ids := make([]string, 0, len(results))
+	for _, result := range results {
+		if id := strings.TrimSpace(result.ToolCallID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtection, policyCtx toolResultPolicyContext) toolResultPolicyResult {
 	if !policyCtx.HasToolResultMessages || pp.shepherdGate == nil {
 		return toolResultPolicyResult{}
@@ -47,6 +67,7 @@ func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProte
 	pp.recoveryMu.Unlock()
 
 	if armed {
+		pp.clearBlockedToolCallIDs(toolCallIDsFromRefs(policyCtx.LatestAssistantToolCalls))
 		pp.clearPendingToolCallRecovery()
 		pp.sendTerminalLog("🔄 用户已确认恢复，跳过 ShepherdGate 检测，放行请求")
 		pp.sendLog("proxy_tool_result_recovery_allowed", map[string]interface{}{
@@ -115,6 +136,7 @@ func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProte
 			"tool":     tr.FuncName,
 			"detected": true,
 		})
+		pp.markBlockedToolCallIDs([]string{tr.ToolCallID})
 
 		sandboxReason := "tool result already blocked by ClawdSecbot sandbox"
 		pp.emitMonitorSecurityDecision(
@@ -213,6 +235,7 @@ func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProte
 		"risk_type":   decision.RiskType,
 	})
 
+	pp.markBlockedToolCallIDs(toolCallIDsFromToolResults(toolResultInfos))
 	pp.storePendingToolCallRecovery(nil, "", decision.Reason, "tool_result")
 
 	securityMsg := pp.shepherdGate.FormatSecurityMockReply(decision)

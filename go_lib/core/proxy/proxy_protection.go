@@ -71,6 +71,8 @@ type ProxyProtection struct {
 	sandboxBlockSeenMu   sync.Mutex
 	sandboxBlockSeen     map[string]struct{}
 	sandboxBlockOrder    []string
+	blockedToolCallMu    sync.Mutex
+	blockedToolCallIDs   map[string]time.Time
 
 	// Server management
 	listener net.Listener
@@ -498,6 +500,7 @@ func NewProxyProtectionFromConfig(protectionConfig *ProtectionConfig, logChan ch
 		records:                 NewRecordStore(),
 		auditTracker:            NewAuditChainTracker(),
 		recoveryMu:              &sync.Mutex{},
+		blockedToolCallIDs:      make(map[string]time.Time),
 		requestCtxToID:          make(map[context.Context]requestContextBinding),
 	}
 

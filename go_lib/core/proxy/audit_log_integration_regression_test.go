@@ -188,6 +188,9 @@ func TestOnRequest_SandboxShortCircuitWaitsForUpstreamResponse(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected nil result when sandbox short-circuit returns early, got %+v", result)
 	}
+	if !pp.isBlockedToolCallID("call_sandbox_1") {
+		t.Fatalf("expected sandbox-blocked tool_call_id to be quarantined")
+	}
 
 	logs := tracker.GetAuditLogs(10, 0, false)
 	if len(logs) != 1 {
