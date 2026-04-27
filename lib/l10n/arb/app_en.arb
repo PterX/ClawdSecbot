@@ -294,6 +294,30 @@
       "error": {"type": "String"}
     }
   },
+  "modelConfigUnknownError": "Unknown error",
+  "modelConfigBotTitle": "Bot Model",
+  "modelConfigSearchProvider": "Search providers",
+  "modelConfigSelectProviderTitle": "Select provider",
+  "modelConfigSelectModel": "Model",
+  "modelConfigRefreshModelList": "Refresh model list",
+  "modelConfigModelListFailed": "Failed to load model list: {message}",
+  "@modelConfigModelListFailed": {
+    "placeholders": {
+      "message": {"type": "String"}
+    }
+  },
+  "modelConfigUseRecommendedModels": "Use a recommended model from the list or type manually.",
+  "modelConfigRefreshModelListRequirement": "Fill in the Base URL and API key before refreshing the model list.",
+  "modelConfigGroupRecommended": "Recommended",
+  "modelConfigGroupCompatible": "Compatible",
+  "modelConfigGroupChina": "China",
+  "modelConfigGroupGlobal": "Global",
+  "modelConfigGroupLocal": "Local",
+  "modelConfigGroupOther": "Other",
+  "modelConfigUpdatingBotTitle": "Updating configuration",
+  "modelConfigUpdatingBotMessage": "Openclaw Dashboard may show disconnected briefly, then recover.",
+  "modelConfigToggleShowSecret": "Show secret",
+  "modelConfigToggleHideSecret": "Hide secret",
 
   "oneClickProtection": "Enable Protection",
   "protectionAssetNotRunning": "Asset not running, cannot enable protection",
