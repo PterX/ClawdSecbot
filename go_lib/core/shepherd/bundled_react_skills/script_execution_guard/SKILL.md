@@ -9,14 +9,14 @@ Load this skill when tool calls include command execution, script execution, or 
 
 ## Tool usage policy
 Tool usage is optional, not mandatory. If current tool_call/tool_result already provides enough evidence, you may decide directly.
-Only call extra tools when context is insufficient.
+Only call extra tools when evidence is insufficient.
 
 ## Analysis workflow
-1. Call `get_recent_tool_calls` and extract the exact command/script content.
-2. Call `get_last_user_message` and compare requested goal vs actual execution scope.
-3. If a script path is referenced, inspect script content with safe `execute` commands (no pipes, no redirection, no chaining).
-4. Evaluate for destructive, privilege, persistence, exfiltration, and lateral movement patterns.
-5. If detected behavior exceeds user intent or enters critical patterns, block the action.
+1. Parse the current `tool_calls` and `tool_results` from analyzer input and extract exact command/script content.
+2. Compare requested goal vs actual execution scope from the provided user-intent context in analyzer input.
+3. If a script path is referenced (for example `.sh`, `.py`, `.ps1`, `.bat`), read the script content before allowing execution.
+4. Evaluate script content for destructive, privilege escalation, persistence, exfiltration, lateral movement, and hidden execution chains.
+5. If script behavior exceeds user intent or enters critical patterns, block the action.
 6. Call `record_security_event` for important allowed/blocked decisions.
 
 ## Detection patterns
@@ -25,11 +25,15 @@ Only call extra tools when context is insufficient.
 - Privilege escalation (`sudo`, `su`, setuid/setgid abuse).
 - Download-and-execute / remote code execution (`curl ... bash`, `wget ... sh`, staged loaders).
 - Reverse shell / backconnect behavior.
+- Credential/secret harvesting from local files or environment variables (`.env`, key files, token dumps).
+- Silent external exfiltration (upload/email/webhook/scp/rsync/curl form post).
+- Persistence implantation (crontab/systemd/launchd/registry autorun/shell profile backdoor).
 
 ### High
 - Bulk operations without explicit user scope.
 - Interpreter execution of untrusted remote/local payloads.
 - Hidden command construction, eval-like behavior, or encoded command strings.
+- Script mutates auth/network controls (`authorized_keys`, firewall, proxy, DNS, sudoers-like files).
 
 ### Medium
 - Project-scoped script execution with minor ambiguity.
@@ -49,4 +53,3 @@ Only call extra tools when context is insufficient.
 - If command modifies startup/login/scheduled execution, load `persistence_backdoor_guard`.
 - If command targets internal hosts/metadata/tunneling, load `lateral_movement_guard`.
 - If command is resource-heavy or unbounded, load `resource_exhaustion_guard`.
-

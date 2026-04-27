@@ -47,7 +47,7 @@ func (blockedToolResultRewriteHook) Rewrite(ctx context.Context, pp *ProxyProtec
 			continue
 		}
 		toolCallID := normalizeBlockedToolCallID(msg.OfTool.ToolCallID)
-		if toolCallID == "" || !pp.isBlockedToolCallID(toolCallID) {
+		if toolCallID == "" || !pp.isBlockedToolCallIDForRequest(rewriteCtx.RequestID, toolCallID) {
 			continue
 		}
 		nextBody, err := sjson.SetBytes(forwardBody, fmt.Sprintf("messages.%d.content", i), blockedToolResultPlaceholder)

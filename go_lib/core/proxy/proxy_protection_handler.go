@@ -92,18 +92,15 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 	inlineToolResultsMap := protocol.InlineToolResults
 	latestRoundTCIDs := protocol.LatestRoundToolCallIDs
 
-	pp.mu.Lock()
-	pp.lastContextMessages = make([]ConversationMessage, 0, len(req.Messages))
-	pp.mu.Unlock()
+	contextMessages := make([]ConversationMessage, 0, len(req.Messages))
+	lastUserMessageContent := ""
 
 	for i, msg := range req.Messages {
 		cm := extractConversationMessage(msg)
 		role := cm.Role
 		content := cm.Content
 
-		pp.mu.Lock()
-		pp.lastContextMessages = append(pp.lastContextMessages, cm)
-		pp.mu.Unlock()
+		contextMessages = append(contextMessages, cm)
 
 		displayContent := content
 		if len(displayContent) > 200 {
@@ -122,9 +119,7 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 		pp.emitMonitorClientMessage(i, role, content)
 
 		if role == "user" {
-			pp.mu.Lock()
-			pp.lastUserMessageContent = content
-			pp.mu.Unlock()
+			lastUserMessageContent = content
 		}
 
 		if msg.OfAssistant != nil && len(msg.OfAssistant.ToolCalls) > 0 {
@@ -168,6 +163,17 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 		}
 	}
 	hasToolResultMessages := len(toolResultsMap) > 0
+	chain := pp.prepareSecurityChainForRequest(requestID, req.Messages, toolResultsMap)
+	chainID := ""
+	if chain != nil {
+		chainID = chain.ChainID
+	}
+	pp.updateSecurityChainContext(requestID, contextMessages, lastUserMessageContent)
+	pp.createRequestRuntimeState(requestID, chainID, req, rawBody)
+	pp.updateTruthRecord(requestID, func(r *TruthRecord) {
+		r.InstructionChainID = chainID
+	})
+
 	tailToolCount, tailToolWithID, tailToolMissingID, tailToolIDs := summarizeTailToolMessages(req.Messages)
 	lastRole := ""
 	if len(req.Messages) > 0 {
@@ -198,6 +204,7 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 	pp.auditLogSafe("link_request_by_tool_results", func(tracker *AuditChainTracker) {
 		tracker.LinkRequestByToolResults(requestID, pp.assetID, toolResultsMap)
 		tracker.RecordToolResults(pp.assetID, toolResultsMap)
+		tracker.SetRequestInstructionChainID(requestID, chainID)
 	})
 
 	// 将历史工具调用记录写入 TruthRecord，标记最新一轮
@@ -208,7 +215,7 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 		}
 		tcID := strings.TrimSpace(tc.ID)
 		result := ""
-		if val, ok := toolResultsMap[tcID]; ok {
+		if val, _, ok := toolResultContentByToolCallID(toolResultsMap, tcID); ok {
 			result = truncateToBytes(val, maxRecordMessageBytes)
 		}
 		args := truncateToBytes(tc.RawArgs, maxRecordToolArgsBytes)
@@ -228,14 +235,10 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 
 	pp.sendSecurityFlowLog(securityFlowStageToolCallResult, "trigger_check: has_tool_results=%v tool_result_count=%d latest_tool_calls=%d", hasToolResultMessages, len(toolResultsMap), len(latestAssistantToolCalls))
 
-	pp.streamBuffer.ClearAll()
-	pp.streamBuffer.SetRequest(requestID, req, rawBody)
-
-	pp.recoverPendingToolCallRecoveryFromHistory(req.Messages)
-	hadPendingRecoveryBeforeArm := pp.hasPendingToolCallRecovery()
-	recoveryArmedForRequest := pp.armPendingRecoveryFromRequest(pp.ctx, req.Messages)
-	recoveryRejectedForRequest := hadPendingRecoveryBeforeArm && !recoveryArmedForRequest && !pp.hasPendingToolCallRecovery()
-	recoveryRequiresToolResult := recoveryArmedForRequest && pp.pendingRecoveryRequiresToolResult()
+	hadPendingRecoveryBeforeArm := pp.hasPendingToolCallRecoveryForRequest(requestID)
+	recoveryArmedForRequest := pp.armPendingRecoveryFromRequest(pp.ctx, requestID, req.Messages)
+	recoveryRejectedForRequest := hadPendingRecoveryBeforeArm && !recoveryArmedForRequest && !pp.hasPendingToolCallRecoveryForRequest(requestID)
+	recoveryRequiresToolResult := recoveryArmedForRequest && pp.pendingRecoveryRequiresToolResultForRequest(requestID)
 	if recoveryArmedForRequest {
 		pp.sendSecurityFlowLog(securityFlowStageRecovery, "user confirmation recognized; skipping user_input policy for this recovery request")
 		pp.sendLog("proxy_pending_tool_recovery_armed", map[string]interface{}{
@@ -267,12 +270,12 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 		return toolPolicyResult.Result, toolPolicyResult.Pass
 	}
 	if recoveryArmedForRequest && !recoveryRequiresToolResult {
-		pp.clearPendingToolCallRecovery()
+		pp.clearPendingToolCallRecoveryForRequest(requestID)
 	}
 	if recoveryArmedForRequest && recoveryRequiresToolResult && !hasToolResultMessages {
-		toolCallIDs := pp.pendingRecoveryToolCallIDs()
-		cleared := pp.clearBlockedToolCallIDs(toolCallIDs)
-		pp.clearPendingToolCallRecovery()
+		toolCallIDs := pp.pendingRecoveryToolCallIDsForRequest(requestID)
+		cleared := pp.clearBlockedToolCallIDsForRequest(requestID, toolCallIDs)
+		pp.clearPendingToolCallRecoveryForRequest(requestID)
 		pp.sendSecurityFlowLog(securityFlowStageRecovery, "confirmed historical recovery without tail tool results; allowing original history cleared_blocked_tool_call_ids=%d", cleared)
 	}
 
@@ -292,6 +295,7 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 func (pp *ProxyProtection) onResponse(ctx context.Context, resp *openai.ChatCompletion) bool {
 	requestID := pp.requestIDFromContext(ctx)
 	defer pp.clearRequestContext(ctx)
+	defer pp.clearRequestRuntimeState(requestID)
 	pp.sendLogForRequest(requestID, "proxy_response_non_stream", nil)
 	pp.sendLogForRequest(requestID, "proxy_response_info", map[string]interface{}{
 		"model":       resp.Model,
@@ -305,6 +309,7 @@ func (pp *ProxyProtection) onResponse(ctx context.Context, resp *openai.ChatComp
 	})
 	var outputContent string
 	var generatedToolCalls []openai.ChatCompletionMessageToolCall
+	streamBuffer := pp.streamBufferForRequest(requestID)
 
 	if len(resp.Choices) > 0 {
 		msg := &resp.Choices[0].Message
@@ -313,6 +318,7 @@ func (pp *ProxyProtection) onResponse(ctx context.Context, resp *openai.ChatComp
 		if ensureResponseToolCallIDs(generatedToolCalls) {
 			msg.ToolCalls = generatedToolCalls
 		}
+		pp.bindToolCallsToSecurityChain(requestID, generatedToolCalls)
 		toolCallPolicyResult := pp.runToolCallPolicyHooks(ctx, toolCallPolicyContext{
 			RequestID: requestID,
 			ToolCalls: generatedToolCalls,
@@ -412,12 +418,12 @@ func (pp *ProxyProtection) onResponse(ctx context.Context, resp *openai.ChatComp
 	}
 
 	if totalTokens == 0 {
-		pp.streamBuffer.mu.Lock()
-		reqMsgs := make([]ConversationMessage, len(pp.streamBuffer.requestMessages))
-		copy(reqMsgs, pp.streamBuffer.requestMessages)
-		toolsRaw := make([]byte, len(pp.streamBuffer.toolsRaw))
-		copy(toolsRaw, pp.streamBuffer.toolsRaw)
-		pp.streamBuffer.mu.Unlock()
+		streamBuffer.mu.Lock()
+		reqMsgs := make([]ConversationMessage, len(streamBuffer.requestMessages))
+		copy(reqMsgs, streamBuffer.requestMessages)
+		toolsRaw := make([]byte, len(streamBuffer.toolsRaw))
+		copy(toolsRaw, streamBuffer.toolsRaw)
+		streamBuffer.mu.Unlock()
 
 		promptTokens = calculateRequestTokensFromRaw(reqMsgs, toolsRaw)
 		completionTokens = estimateTokenCount(outputContent)
@@ -506,6 +512,7 @@ func (pp *ProxyProtection) onResponse(ctx context.Context, resp *openai.ChatComp
 // onStreamChunk handles streaming responses
 func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.ChatCompletionChunk) bool {
 	requestID := pp.requestIDFromContext(ctx)
+	streamBuffer := pp.streamBufferForRequest(requestID)
 	var currentRequestPromptTokens, currentRequestCompletionTokens, currentRequestTotalTokens int
 
 	if chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0 || chunk.Usage.TotalTokens > 0 {
@@ -516,10 +523,10 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 			currentRequestTotalTokens = currentRequestPromptTokens + currentRequestCompletionTokens
 		}
 
-		pp.streamBuffer.mu.Lock()
-		prevPromptTokens := pp.streamBuffer.promptTokens
-		prevCompletionTokens := pp.streamBuffer.completionTokens
-		prevTotalTokens := pp.streamBuffer.totalTokens
+		streamBuffer.mu.Lock()
+		prevPromptTokens := streamBuffer.promptTokens
+		prevCompletionTokens := streamBuffer.completionTokens
+		prevTotalTokens := streamBuffer.totalTokens
 		deltaPromptTokens := currentRequestPromptTokens - prevPromptTokens
 		deltaCompletionTokens := currentRequestCompletionTokens - prevCompletionTokens
 		deltaTotalTokens := currentRequestTotalTokens - prevTotalTokens
@@ -532,10 +539,10 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 		if deltaTotalTokens < 0 {
 			deltaTotalTokens = currentRequestTotalTokens
 		}
-		pp.streamBuffer.promptTokens = currentRequestPromptTokens
-		pp.streamBuffer.completionTokens = currentRequestCompletionTokens
-		pp.streamBuffer.totalTokens = currentRequestTotalTokens
-		pp.streamBuffer.mu.Unlock()
+		streamBuffer.promptTokens = currentRequestPromptTokens
+		streamBuffer.completionTokens = currentRequestCompletionTokens
+		streamBuffer.totalTokens = currentRequestTotalTokens
+		streamBuffer.mu.Unlock()
 
 		pp.metricsMu.Lock()
 		pp.totalPromptTokens += deltaPromptTokens
@@ -590,21 +597,21 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 			}
 		}
 
-		if !pp.streamBuffer.started {
-			pp.streamBuffer.started = true
+		if !streamBuffer.started {
+			streamBuffer.started = true
 			pp.sendLog("monitor_upstream_stream_started", map[string]interface{}{
 				"response_mode": "stream",
 			})
 		}
 
-		pp.streamBuffer.mu.Lock()
+		streamBuffer.mu.Lock()
 		prevLen := 0
-		for _, c := range pp.streamBuffer.contentChunks {
+		for _, c := range streamBuffer.contentChunks {
 			prevLen += len(c)
 		}
-		pp.streamBuffer.mu.Unlock()
+		streamBuffer.mu.Unlock()
 
-		pp.streamBuffer.AppendContent(choice.Delta.Content)
+		streamBuffer.AppendContent(choice.Delta.Content)
 		newLen := prevLen + len(choice.Delta.Content)
 
 		if prevLen == 0 || (prevLen/200 != newLen/200) {
@@ -624,12 +631,12 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 		readyToolCalls := make([]openai.ChatCompletionMessageToolCall, 0)
 		for i := range choice.Delta.ToolCalls {
 			originalID := strings.TrimSpace(choice.Delta.ToolCalls[i].ID)
-			resolvedID := pp.streamBuffer.MergeStreamToolCall(choice.Delta.ToolCalls[i])
+			resolvedID := streamBuffer.MergeStreamToolCall(choice.Delta.ToolCalls[i])
 			if originalID == "" && resolvedID != "" {
 				choice.Delta.ToolCalls[i].ID = resolvedID
 			}
 		}
-		for _, update := range pp.streamBuffer.ConsumeNewlyReadyToolCalls() {
+		for _, update := range streamBuffer.ConsumeNewlyReadyToolCalls() {
 			tc := update.ToolCall
 			readyToolCalls = append(readyToolCalls, tc)
 			pp.sendLog("proxy_tool_call_name", map[string]interface{}{
@@ -652,17 +659,8 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 			}
 		}
 		if len(readyToolCalls) > 0 {
-			toolCallPolicyResult := pp.runToolCallPolicyHooks(ctx, toolCallPolicyContext{
-				RequestID: requestID,
-				ToolCalls: readyToolCalls,
-			})
-			if toolCallPolicyResult.Handled && toolCallPolicyResult.Decision != nil {
-				securityMsg := pp.formatPolicySecurityMessage(*toolCallPolicyResult.Decision)
-				choice.Delta.ToolCalls = nil
-				choice.Delta.Content = securityMsg
-				choice.FinishReason = "stop"
-				return pp.applyResponseSecurityPolicyDecision(ctx, requestID, *toolCallPolicyResult.Decision, true)
-			}
+			pp.bindToolCallsToSecurityChain(requestID, readyToolCalls)
+			pp.sendSecurityFlowLog(securityFlowStageToolCall, "stream_delta tool_call metadata observed; defer security analysis until stream finish")
 		}
 		if len(readyToolCalls) > 0 {
 			pp.auditLogSafe("record_toolcalls_on_stream_delta", func(tracker *AuditChainTracker) {
@@ -680,19 +678,30 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 			r.FinishReason = string(choice.FinishReason)
 		})
 
-		if pp.streamBuffer.HasToolCalls() {
-			pp.streamBuffer.mu.Lock()
-			toolCallCount := len(pp.streamBuffer.toolCalls)
+		if streamBuffer.HasToolCalls() {
+			streamBuffer.mu.Lock()
+			toolCallCount := len(streamBuffer.toolCalls)
 			finishToolCallCount = toolCallCount
-			bufferToolCalls := make([]openai.ChatCompletionMessageToolCall, len(pp.streamBuffer.toolCalls))
-			copy(bufferToolCalls, pp.streamBuffer.toolCalls)
+			bufferToolCalls := make([]openai.ChatCompletionMessageToolCall, len(streamBuffer.toolCalls))
+			copy(bufferToolCalls, streamBuffer.toolCalls)
 			var contentWithTools string
-			for _, c := range pp.streamBuffer.contentChunks {
+			for _, c := range streamBuffer.contentChunks {
 				contentWithTools += c
 			}
-			pp.streamBuffer.mu.Unlock()
+			streamBuffer.mu.Unlock()
+			pp.bindToolCallsToSecurityChain(requestID, bufferToolCalls)
 
 			pp.sendSecurityFlowLog(securityFlowStageToolCall, "stream_response tool_call_count=%d", toolCallCount)
+			toolCallPolicyResult := pp.runToolCallPolicyHooks(ctx, toolCallPolicyContext{
+				RequestID: requestID,
+				ToolCalls: bufferToolCalls,
+			})
+			if toolCallPolicyResult.Handled && toolCallPolicyResult.Decision != nil {
+				choice.Delta.ToolCalls = nil
+				choice.Delta.Content = pp.formatPolicySecurityMessage(*toolCallPolicyResult.Decision)
+				choice.FinishReason = "stop"
+				return pp.applyResponseSecurityPolicyDecision(ctx, requestID, *toolCallPolicyResult.Decision, true)
+			}
 
 			pp.metricsMu.Lock()
 			pp.totalToolCalls += toolCallCount
@@ -738,12 +747,12 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 				tracker.RecordToolCallsForRequest(requestID, pp.assetID, bufferToolCalls, pp.toolValidator)
 			})
 		} else {
-			pp.streamBuffer.mu.Lock()
+			streamBuffer.mu.Lock()
 			var accumulatedContent string
-			for _, c := range pp.streamBuffer.contentChunks {
+			for _, c := range streamBuffer.contentChunks {
 				accumulatedContent += c
 			}
-			pp.streamBuffer.mu.Unlock()
+			streamBuffer.mu.Unlock()
 
 			if len(accumulatedContent) > 0 {
 				logContent := accumulatedContent
@@ -817,21 +826,21 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 		}
 
 		// Finalize
-		pp.streamBuffer.mu.Lock()
+		streamBuffer.mu.Lock()
 		var outputContent string
-		for _, c := range pp.streamBuffer.contentChunks {
+		for _, c := range streamBuffer.contentChunks {
 			outputContent += c
 		}
-		promptTokens := pp.streamBuffer.promptTokens
-		completionTokens := pp.streamBuffer.completionTokens
-		totalTokens := pp.streamBuffer.totalTokens
-		generatedToolCalls := pp.streamBuffer.toolCalls
+		promptTokens := streamBuffer.promptTokens
+		completionTokens := streamBuffer.completionTokens
+		totalTokens := streamBuffer.totalTokens
+		generatedToolCalls := streamBuffer.toolCalls
 
 		if totalTokens == 0 {
-			promptTokens = calculateRequestTokensFromRaw(pp.streamBuffer.requestMessages, pp.streamBuffer.toolsRaw)
+			promptTokens = calculateRequestTokensFromRaw(streamBuffer.requestMessages, streamBuffer.toolsRaw)
 			completionTokens = estimateTokenCount(outputContent)
-			if len(pp.streamBuffer.toolCalls) > 0 {
-				if toolCallsBytes, err := json.Marshal(pp.streamBuffer.toolCalls); err == nil {
+			if len(streamBuffer.toolCalls) > 0 {
+				if toolCallsBytes, err := json.Marshal(streamBuffer.toolCalls); err == nil {
 					completionTokens += estimateTokenCount(string(toolCallsBytes))
 				}
 			}
@@ -853,9 +862,9 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 			)
 			pp.sendMetricsToCallback()
 
-			pp.streamBuffer.promptTokens = promptTokens
-			pp.streamBuffer.completionTokens = completionTokens
-			pp.streamBuffer.totalTokens = totalTokens
+			streamBuffer.promptTokens = promptTokens
+			streamBuffer.completionTokens = completionTokens
+			streamBuffer.totalTokens = totalTokens
 
 			pp.sendLogForRequest(requestID, "proxy_token_usage_estimated", map[string]interface{}{
 				"promptTokens":       promptTokens,
@@ -864,7 +873,7 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 				"conversationTokens": conversationTotal,
 			})
 		}
-		pp.streamBuffer.mu.Unlock()
+		streamBuffer.mu.Unlock()
 		logging.Info(
 			"[AuditChain] response observed: request_id=%s mode=stream finish_reason=%s tool_calls=%d output_len=%d",
 			requestID,
@@ -902,7 +911,8 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 		pp.emitMonitorResponseReturned("COMPLETED", outputContent, outputContent)
 
 		pp.clearRequestContext(ctx)
-		pp.streamBuffer.Clear()
+		pp.clearRequestRuntimeState(requestID)
+		streamBuffer.Clear()
 	}
 
 	return true

@@ -9,11 +9,10 @@ import (
 )
 
 func TestOnResponse_EstimatesUsageWhenMissing(t *testing.T) {
-	pp := &ProxyProtection{
-		streamBuffer: NewStreamBuffer(),
-	}
-	pp.streamBuffer.requestID = "req-response"
-	pp.streamBuffer.requestMessages = []ConversationMessage{
+	pp := &ProxyProtection{}
+	ctx := context.Background()
+	streamBuffer := prepareTestRequestContext(t, pp, ctx, "req-response")
+	streamBuffer.requestMessages = []ConversationMessage{
 		{
 			Role:    "user",
 			Content: "hello, please summarize this text",
@@ -32,7 +31,7 @@ func TestOnResponse_EstimatesUsageWhenMissing(t *testing.T) {
 		// Usage intentionally omitted (all zero).
 	}
 
-	if !pp.onResponse(context.Background(), resp) {
+	if !pp.onResponse(ctx, resp) {
 		t.Fatalf("expected onResponse to pass")
 	}
 
@@ -52,12 +51,11 @@ func TestOnResponse_EstimatesUsageWhenMissing(t *testing.T) {
 
 func TestOnResponse_UsesStableRequestIDForTruthRecordCompletion(t *testing.T) {
 	pp := &ProxyProtection{
-		streamBuffer:     &StreamBuffer{requestID: "req-newer"},
 		records:          NewRecordStore(),
 		currentRequestID: "req-newer",
 	}
 	ctx := context.WithValue(context.Background(), "k", "v")
-	pp.bindRequestContext(ctx, "req-finished")
+	prepareTestRequestContext(t, pp, ctx, "req-finished")
 
 	pp.updateTruthRecord("req-finished", func(r *TruthRecord) {
 		r.Model = "gpt-test"
@@ -113,9 +111,9 @@ func TestOnResponse_UsesStableRequestIDForTruthRecordCompletion(t *testing.T) {
 }
 
 func TestOnStreamChunk_UsageAccumulatesByDeltaForCumulativeReports(t *testing.T) {
-	pp := &ProxyProtection{
-		streamBuffer: NewStreamBuffer(),
-	}
+	pp := &ProxyProtection{}
+	ctx := context.Background()
+	prepareTestRequestContext(t, pp, ctx, "req-stream-usage")
 
 	chunk1 := &openai.ChatCompletionChunk{
 		Usage: openai.CompletionUsage{
@@ -139,9 +137,9 @@ func TestOnStreamChunk_UsageAccumulatesByDeltaForCumulativeReports(t *testing.T)
 		},
 	}
 
-	_ = pp.onStreamChunk(context.Background(), chunk1)
-	_ = pp.onStreamChunk(context.Background(), chunk2)
-	_ = pp.onStreamChunk(context.Background(), chunk3)
+	_ = pp.onStreamChunk(ctx, chunk1)
+	_ = pp.onStreamChunk(ctx, chunk2)
+	_ = pp.onStreamChunk(ctx, chunk3)
 
 	pp.metricsMu.Lock()
 	defer pp.metricsMu.Unlock()
@@ -160,10 +158,11 @@ func TestOnStreamChunk_UsageAccumulatesByDeltaForCumulativeReports(t *testing.T)
 func TestOnStreamChunk_EmitsRealtimeContentAndToolLogs(t *testing.T) {
 	logChan := make(chan string, 20)
 	pp := &ProxyProtection{
-		streamBuffer: NewStreamBuffer(),
-		logChan:      logChan,
+		logChan: logChan,
 	}
 	pp.currentRequestID = "req_test"
+	ctx := context.Background()
+	prepareTestRequestContext(t, pp, ctx, "req_test")
 
 	chunk := &openai.ChatCompletionChunk{
 		Choices: []openai.ChatCompletionChunkChoice{
@@ -185,7 +184,7 @@ func TestOnStreamChunk_EmitsRealtimeContentAndToolLogs(t *testing.T) {
 		},
 	}
 
-	if !pp.onStreamChunk(context.Background(), chunk) {
+	if !pp.onStreamChunk(ctx, chunk) {
 		t.Fatalf("expected onStreamChunk to pass")
 	}
 
@@ -242,12 +241,11 @@ func TestOnStreamChunk_EmitsRealtimeContentAndToolLogs(t *testing.T) {
 // uses context-bound request_id even if global/request buffer points elsewhere.
 func TestOnStreamChunk_UsesStableRequestIDForCompletion(t *testing.T) {
 	pp := &ProxyProtection{
-		streamBuffer:     &StreamBuffer{requestID: "req-newer"},
 		records:          NewRecordStore(),
 		currentRequestID: "req-newer",
 	}
 	ctx := context.WithValue(context.Background(), "k", "v")
-	pp.bindRequestContext(ctx, "req-stream")
+	prepareTestRequestContext(t, pp, ctx, "req-stream")
 
 	pp.updateTruthRecord("req-stream", func(r *TruthRecord) {
 		r.Phase = advanceRecordPhase(r.Phase, RecordPhaseStarting)
@@ -299,11 +297,12 @@ func TestOnStreamChunk_UsesStableRequestIDForCompletion(t *testing.T) {
 func TestOnResponse_EmitsMonitorCompletionAndReturn(t *testing.T) {
 	logChan := make(chan string, 20)
 	pp := &ProxyProtection{
-		streamBuffer: NewStreamBuffer(),
-		logChan:      logChan,
+		logChan: logChan,
 	}
 	pp.currentRequestID = "req_test"
-	pp.streamBuffer.requestMessages = []ConversationMessage{
+	ctx := context.Background()
+	streamBuffer := prepareTestRequestContext(t, pp, ctx, "req_test")
+	streamBuffer.requestMessages = []ConversationMessage{
 		{Role: "user", Content: "hello"},
 	}
 
@@ -318,7 +317,7 @@ func TestOnResponse_EmitsMonitorCompletionAndReturn(t *testing.T) {
 		},
 	}
 
-	if !pp.onResponse(context.Background(), resp) {
+	if !pp.onResponse(ctx, resp) {
 		t.Fatalf("expected onResponse to pass")
 	}
 
@@ -346,11 +345,12 @@ func TestOnResponse_EmitsMonitorCompletionAndReturn(t *testing.T) {
 func TestOnResponse_AssignsMissingToolCallIDAndRecordsAudit(t *testing.T) {
 	tracker := NewAuditChainTracker()
 	pp := &ProxyProtection{
-		streamBuffer:     NewStreamBuffer(),
 		auditTracker:     tracker,
 		currentRequestID: "req-missing-id",
 		assetID:          "openclaw:a1",
 	}
+	ctx := context.Background()
+	prepareTestRequestContext(t, pp, ctx, "req-missing-id")
 
 	req, _ := mustParseChatRequest(t, `{
 	  "model":"gpt-test",
@@ -378,7 +378,7 @@ func TestOnResponse_AssignsMissingToolCallIDAndRecordsAudit(t *testing.T) {
 		},
 	}
 
-	if !pp.onResponse(context.Background(), resp) {
+	if !pp.onResponse(ctx, resp) {
 		t.Fatalf("expected onResponse to pass")
 	}
 
@@ -400,9 +400,9 @@ func TestOnResponse_AssignsMissingToolCallIDAndRecordsAudit(t *testing.T) {
 }
 
 func TestOnStreamChunk_AssignsStableToolCallIDWhenMissing(t *testing.T) {
-	pp := &ProxyProtection{
-		streamBuffer: NewStreamBuffer(),
-	}
+	pp := &ProxyProtection{}
+	ctx := context.Background()
+	prepareTestRequestContext(t, pp, ctx, "req-stream-missing-id")
 
 	chunk1 := &openai.ChatCompletionChunk{
 		Choices: []openai.ChatCompletionChunkChoice{
@@ -437,10 +437,10 @@ func TestOnStreamChunk_AssignsStableToolCallIDWhenMissing(t *testing.T) {
 		},
 	}
 
-	if !pp.onStreamChunk(context.Background(), chunk1) {
+	if !pp.onStreamChunk(ctx, chunk1) {
 		t.Fatalf("expected first stream chunk to pass")
 	}
-	if !pp.onStreamChunk(context.Background(), chunk2) {
+	if !pp.onStreamChunk(ctx, chunk2) {
 		t.Fatalf("expected second stream chunk to pass")
 	}
 
@@ -460,7 +460,6 @@ func TestOnStreamChunk_AssignsStableToolCallIDWhenMissing(t *testing.T) {
 func TestOnStreamChunk_BindsToolCallBeforeFinishForFollowupLinking(t *testing.T) {
 	tracker := NewAuditChainTracker()
 	pp := &ProxyProtection{
-		streamBuffer: NewStreamBuffer(),
 		auditTracker: tracker,
 		assetID:      "openclaw:a1",
 	}
@@ -474,7 +473,7 @@ func TestOnStreamChunk_BindsToolCallBeforeFinishForFollowupLinking(t *testing.T)
 	tracker.StartFromRequest("req_stream", "openclaw", "openclaw:a1", "gpt-test", req.Messages)
 
 	ctx := context.WithValue(context.Background(), "k", "stream")
-	pp.bindRequestContext(ctx, "req_stream")
+	prepareTestRequestContext(t, pp, ctx, "req_stream")
 
 	chunk := &openai.ChatCompletionChunk{
 		Choices: []openai.ChatCompletionChunkChoice{

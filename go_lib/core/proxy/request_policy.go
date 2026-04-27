@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	chatmodelrouting "go_lib/chatmodel-routing"
@@ -145,8 +146,26 @@ func (pp *ProxyProtection) applyRequestPolicyDecision(
 	pp.currentRequestID = fmt.Sprintf("req_%d_%d", time.Now().UnixNano(), pp.requestCount+1)
 	requestID := pp.currentRequestID
 	pp.auditMu.Unlock()
+	pp.bindRequestContext(ctx, requestID)
+	chain := pp.prepareSecurityChainForRequest(requestID, req.Messages, nil)
+	chainID := ""
+	if chain != nil {
+		chainID = chain.ChainID
+	}
+	pp.createRequestRuntimeState(requestID, chainID, req, rawBody)
+	contextMessages := make([]ConversationMessage, 0, len(req.Messages))
+	lastUserMessage := ""
+	for _, msg := range req.Messages {
+		cm := extractConversationMessage(msg)
+		contextMessages = append(contextMessages, cm)
+		if strings.EqualFold(cm.Role, "user") {
+			lastUserMessage = cm.Content
+		}
+	}
+	pp.updateSecurityChainContext(requestID, contextMessages, lastUserMessage)
 	pp.auditLogSafe(decision.AuditStartSource, func(tracker *AuditChainTracker) {
 		tracker.StartFromRequest(requestID, pp.assetName, pp.assetID, modelName, req.Messages)
+		tracker.SetRequestInstructionChainID(requestID, chainID)
 	})
 
 	pp.sendLog(decision.SendLogKey, map[string]interface{}{
@@ -164,6 +183,7 @@ func (pp *ProxyProtection) applyRequestPolicyDecision(
 		if decision.SetConversation {
 			r.ConversationTokens = state.ConversationUsage
 		}
+		r.InstructionChainID = chainID
 		r.DailyTokens = pp.currentDailyTokenUsage()
 		r.OutputContent = truncateToBytes(decision.MockContent, maxRecordOutputBytes)
 		appendRequestMessagesToTruthRecord(r, req)
@@ -186,5 +206,6 @@ func (pp *ProxyProtection) applyRequestPolicyDecision(
 		tracker.FinalizeRequestOutput(requestID, decision.MockContent)
 	})
 	pp.clearRequestContext(ctx)
+	pp.clearRequestRuntimeState(requestID)
 	return &chatmodelrouting.FilterRequestResult{MockContent: decision.MockContent}, false
 }

@@ -17,8 +17,8 @@ const (
 	securityFlowStageRequestRewrite = "request_rewrite"
 	securityFlowStageFinalResult    = "final_result"
 	securityFlowStageRecovery       = "recovery"
-	securityFlowStageBudget         = "budget"
 	securityFlowStageQuarantine     = "quarantine"
+	securityFlowStageChain          = "chain"
 )
 
 func formatSecurityFlowLog(stage, format string, args ...interface{}) string {

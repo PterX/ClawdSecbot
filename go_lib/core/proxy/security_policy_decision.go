@@ -97,8 +97,8 @@ func (pp *ProxyProtection) applyRequestSecurityPolicyDecision(ctx context.Contex
 		riskLevel = "HIGH"
 	}
 
-	if action == decisionActionNeedsConfirm {
-		pp.storePendingToolCallRecoveryWithIDs(nil, nil, "", decision.Reason, decision.HookStage)
+	if action == decisionActionNeedsConfirm && !(decision.HookStage == hookStageToolCallResult && pp.hasPendingToolCallRecoveryForRequest(requestID)) {
+		pp.storePendingToolCallRecoveryWithRiskForRequest(requestID, nil, nil, "", decision.Reason, decision.HookStage, decision.RiskType)
 	}
 	pp.sendSecurityFlowLog(decision.HookStage, "request_decision: action=%s risk_type=%s risk_level=%s reason=%s", action, decision.RiskType, riskLevel, decision.Reason)
 	pp.emitMonitorSecurityDecision(decision.normalizedStatus(), decision.Reason, true, securityMsg)
@@ -141,6 +141,7 @@ func (pp *ProxyProtection) applyRequestSecurityPolicyDecision(ctx context.Contex
 		tracker.FinalizeRequestOutput(requestID, securityMsg)
 	})
 	pp.clearRequestContext(ctx)
+	pp.clearRequestRuntimeState(requestID)
 
 	return &chatmodelrouting.FilterRequestResult{MockContent: securityMsg}, false
 }
@@ -156,6 +157,14 @@ func (pp *ProxyProtection) applyResponseSecurityPolicyDecision(ctx context.Conte
 		riskLevel = "HIGH"
 	}
 
+	if action == decisionActionNeedsConfirm {
+		var toolCallIDs []string
+		if toolCallID := normalizeBlockedToolCallID(decision.ToolCallID); toolCallID != "" {
+			toolCallIDs = []string{toolCallID}
+			pp.markBlockedToolCallIDsForRequest(requestID, toolCallIDs)
+		}
+		pp.storePendingToolCallRecoveryWithRiskForRequest(requestID, nil, toolCallIDs, "", decision.Reason, decision.HookStage, decision.RiskType)
+	}
 	pp.sendSecurityFlowLog(decision.HookStage, "response_decision: action=%s risk_type=%s risk_level=%s reason=%s", action, decision.RiskType, riskLevel, decision.Reason)
 	pp.emitMonitorSecurityDecision(decision.normalizedStatus(), decision.Reason, true, securityMsg)
 	pp.updateTruthRecord(requestID, func(r *TruthRecord) {
@@ -199,5 +208,6 @@ func (pp *ProxyProtection) applyResponseSecurityPolicyDecision(ctx context.Conte
 	if clearContext {
 		pp.clearRequestContext(ctx)
 	}
+	pp.clearRequestRuntimeState(requestID)
 	return false
 }

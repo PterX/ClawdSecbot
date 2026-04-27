@@ -54,21 +54,49 @@ func toolCallIDsFromToolResults(results []ToolResultInfo) []string {
 	return ids
 }
 
+func toolResultContentByToolCallID(toolResults map[string]string, toolCallID string) (string, string, bool) {
+	rawToolCallID := strings.TrimSpace(toolCallID)
+	if rawToolCallID == "" || len(toolResults) == 0 {
+		return "", "", false
+	}
+	if content, ok := toolResults[rawToolCallID]; ok {
+		return content, rawToolCallID, true
+	}
+	matchID := normalizeBlockedToolCallID(rawToolCallID)
+	if matchID == "" {
+		return "", "", false
+	}
+	found := false
+	foundID := ""
+	foundContent := ""
+	for rawID, content := range toolResults {
+		candidateID := strings.TrimSpace(rawID)
+		if normalizeBlockedToolCallID(candidateID) != matchID {
+			continue
+		}
+		if found {
+			return "", "", false
+		}
+		found = true
+		foundID = candidateID
+		foundContent = content
+	}
+	return foundContent, foundID, found
+}
+
 func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtection, policyCtx toolResultPolicyContext) toolResultPolicyResult {
 	if !policyCtx.HasToolResultMessages || pp.shepherdGate == nil {
 		return toolResultPolicyResult{}
 	}
 
-	pp.ensureRecoveryMutex()
-	pp.recoveryMu.Lock()
-	armed := pp.pendingRecoveryArmed
-	pp.recoveryMu.Unlock()
+	chain := pp.chainByRequestID(policyCtx.RequestID)
+	armed := chain != nil && chain.PendingRecoveryArmed
 
 	if armed {
-		toolCallIDs := append(pp.pendingRecoveryToolCallIDs(), toolCallIDsFromRefs(policyCtx.LatestAssistantToolCalls)...)
-		cleared := pp.clearBlockedToolCallIDs(toolCallIDs)
-		pp.clearPendingToolCallRecovery()
-		pp.sendSecurityFlowLog(securityFlowStageRecovery, "recovery is armed; skipping tool_result analysis and allowing request cleared_blocked_tool_call_ids=%d", cleared)
+		toolCallIDs := append(pp.pendingRecoveryToolCallIDsForRequest(policyCtx.RequestID), toolCallIDsFromRefs(policyCtx.LatestAssistantToolCalls)...)
+		cleared := pp.clearBlockedToolCallIDsForRequest(policyCtx.RequestID, toolCallIDs)
+		pp.clearPendingToolCallRecoveryForRequest(policyCtx.RequestID)
+		pp.sendSecurityFlowLog(securityFlowStageRecovery, "recovery is armed; skipping tool_result analysis and allowing request_id=%s cleared_blocked_tool_call_ids=%d", policyCtx.RequestID, cleared)
 		pp.sendLog("proxy_tool_result_recovery_allowed", map[string]interface{}{
 			"armed": true,
 			"ids":   toolCallIDs,
@@ -106,16 +134,31 @@ func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProte
 		toolCallInfos = append(toolCallInfos, info)
 	}
 
-	toolResultInfos := make([]ToolResultInfo, 0, len(policyCtx.LatestAssistantToolCalls))
+	toolResultInfos := make([]ToolResultInfo, 0, len(policyCtx.ToolResultsMap))
+	matchedToolResultIDs := make(map[string]struct{})
 	for _, tcRef := range policyCtx.LatestAssistantToolCalls {
-		tcID := strings.TrimSpace(tcRef.ID)
-		if content, ok := policyCtx.ToolResultsMap[tcID]; ok {
+		if content, resultID, ok := toolResultContentByToolCallID(policyCtx.ToolResultsMap, tcRef.ID); ok {
+			matchedToolResultIDs[resultID] = struct{}{}
 			toolResultInfos = append(toolResultInfos, ToolResultInfo{
-				ToolCallID: tcRef.ID,
+				ToolCallID: resultID,
 				FuncName:   tcRef.FuncName,
 				Content:    content,
 			})
 		}
+	}
+	for resultID, content := range policyCtx.ToolResultsMap {
+		resultID = strings.TrimSpace(resultID)
+		if resultID == "" {
+			continue
+		}
+		if _, ok := matchedToolResultIDs[resultID]; ok {
+			continue
+		}
+		toolResultInfos = append(toolResultInfos, ToolResultInfo{
+			ToolCallID: resultID,
+			FuncName:   "tool_result",
+			Content:    content,
+		})
 	}
 
 	for _, tr := range toolResultInfos {
@@ -136,7 +179,7 @@ func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProte
 			"tool":     tr.FuncName,
 			"detected": true,
 		})
-		pp.markBlockedToolCallIDs([]string{tr.ToolCallID})
+		pp.markBlockedToolCallIDsForRequest(policyCtx.RequestID, []string{tr.ToolCallID})
 
 		sandboxReason := "tool result already blocked by ClawdSecbot sandbox"
 		pp.emitMonitorSecurityDecision(
@@ -167,40 +210,22 @@ func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProte
 	})
 	pp.sendSecurityFlowLog(securityFlowStageToolCallResult, "analysis_start: tool_result_count=%d tools=%s", len(toolResultInfos), strings.Join(toolNames, ", "))
 
-	pp.mu.Lock()
-	contextMessages := pp.lastContextMessages
-	cachedLastUserMsg := pp.lastUserMessageContent
-	pp.mu.Unlock()
+	_, _, chainMeta, hasChain := pp.securityChainContext(policyCtx.RequestID)
+	if hasChain && chainMeta.Degraded {
+		pp.sendSecurityFlowLog(securityFlowStageChain, "chain_degraded_context: request_id=%s instruction_chain_id=%s reason=%s", policyCtx.RequestID, chainMeta.ChainID, chainMeta.DegradeReason)
+	}
 
 	securityModel := pp.shepherdGate.GetModelName()
 	logSecurityFlowInfo(securityFlowStageToolCallResult, "deep_analysis_triggered: tool_calls=%d tool_results=%d security_model=%s", len(toolCallInfos), len(toolResultInfos), securityModel)
 
-	estimatedSecurityTokens := estimateToolResultSecurityAnalysisTokens(contextMessages, toolCallInfos, toolResultInfos, cachedLastUserMsg)
-	budgetDecision := pp.evaluateSecurityBudget(estimatedSecurityTokens)
-	if !budgetDecision.Allowed {
-		logSecurityFlowWarning(securityFlowStageBudget, "tool_result deep analysis skipped: %s", budgetDecision.Reason)
-		pp.sendSecurityFlowLog(securityFlowStageBudget, "tool_result deep analysis skipped: %s", budgetDecision.Reason)
-		if fallbackDecision := inspectToolResultBudgetFallback(toolResultInfos, budgetDecision, pp.shepherdGate.EffectiveLanguage()); fallbackDecision != nil {
-			toolCallIDs := toolCallIDsFromToolResults(toolResultInfos)
-			pp.markBlockedToolCallIDs(toolCallIDs)
-			pp.storePendingToolCallRecoveryWithIDs(nil, toolCallIDs, "", fallbackDecision.Reason, "tool_result_budget")
-			result, pass := pp.applyRequestSecurityPolicyDecision(ctx, policyCtx.RequestID, *fallbackDecision)
-			return toolResultPolicyResult{Result: result, Pass: pass, Handled: true}
-		}
-		pp.sendLog("proxy_tool_result_security_budget_skipped", map[string]interface{}{
-			"request_id":      policyCtx.RequestID,
-			"business_tokens": budgetDecision.BusinessTokens,
-			"security_tokens": budgetDecision.SecurityTokens,
-			"estimated":       budgetDecision.Estimated,
-			"limit":           budgetDecision.Limit,
-		})
-		return toolResultPolicyResult{}
-	}
-
 	// Use the proxy lifecycle context instead of the request context so a
 	// client-side disconnect does not cancel security analysis mid-flight.
-	checkCtx := shepherd.WithBotID(pp.ctx, pp.assetID)
-	decision, err := pp.shepherdGate.CheckToolCall(checkCtx, contextMessages, toolCallInfos, toolResultInfos, cachedLastUserMsg, policyCtx.RequestID)
+	checkCtx := pp.ctx
+	if checkCtx == nil {
+		checkCtx = context.Background()
+	}
+	checkCtx = shepherd.WithBotID(checkCtx, pp.assetID)
+	decision, err := pp.shepherdGate.CheckToolCall(checkCtx, toolCallInfos, toolResultInfos, policyCtx.RequestID)
 
 	pp.statsMu.Lock()
 	pp.analysisCount++
@@ -214,7 +239,7 @@ func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProte
 		pp.auditCompletionTokens += decision.Usage.CompletionTokens
 		pp.metricsMu.Unlock()
 		pp.sendMetricsToCallback()
-		pp.sendSecurityFlowLog(securityFlowStageBudget, "analysis_token_usage: total=%d prompt=%d completion=%d",
+		pp.sendSecurityFlowLog(securityFlowStageToolCallResult, "analysis_token_usage: total=%d prompt=%d completion=%d",
 			decision.Usage.TotalTokens, decision.Usage.PromptTokens, decision.Usage.CompletionTokens)
 	}
 
@@ -258,8 +283,8 @@ func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProte
 	})
 
 	toolCallIDs := toolCallIDsFromToolResults(toolResultInfos)
-	pp.markBlockedToolCallIDs(toolCallIDs)
-	pp.storePendingToolCallRecoveryWithIDs(nil, toolCallIDs, "", decision.Reason, "tool_result")
+	pp.markBlockedToolCallIDsForRequest(policyCtx.RequestID, toolCallIDs)
+	pp.storePendingToolCallRecoveryWithRiskForRequest(policyCtx.RequestID, nil, toolCallIDs, "", decision.Reason, "tool_result", decision.RiskType)
 
 	securityMsg := pp.shepherdGate.FormatSecurityMockReply(decision)
 	pp.emitMonitorSecurityDecision(decision.Status, decision.Reason, true, securityMsg)
@@ -309,6 +334,7 @@ func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProte
 		tracker.FinalizeRequestOutput(policyCtx.RequestID, securityMsg)
 	})
 	pp.clearRequestContext(ctx)
+	pp.clearRequestRuntimeState(policyCtx.RequestID)
 	return toolResultPolicyResult{
 		Result:  &chatmodelrouting.FilterRequestResult{MockContent: securityMsg},
 		Pass:    false,

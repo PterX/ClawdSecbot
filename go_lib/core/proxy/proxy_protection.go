@@ -57,22 +57,16 @@ type ProxyProtection struct {
 	dailyTokenLimit         int
 	initialDailyUsage       int
 
-	// Stream buffer for accumulating chunks until tool call
-	streamBuffer *StreamBuffer
+	// ShepherdGate runtime chain isolation state.
+	chainMu          sync.Mutex
+	chains           map[string]*SecurityChainState
+	requestToChain   map[string]securityChainBinding
+	toolCallToChains map[string]map[string]securityChainBinding
+	requestStates    map[string]*RequestRuntimeState
 
-	// Context for ShepherdGate (last request messages)
-	lastContextMessages    []ConversationMessage
-	lastUserMessageContent string // 跨请求持久化的最后一条用户消息，防止上下文压缩丢失
-
-	// Tool call recovery state (when blocked tool_calls need restoration after user confirmation)
-	recoveryMu           *sync.Mutex
-	pendingRecovery      *pendingToolCallRecovery
-	pendingRecoveryArmed bool
-	sandboxBlockSeenMu   sync.Mutex
-	sandboxBlockSeen     map[string]struct{}
-	sandboxBlockOrder    []string
-	blockedToolCallMu    sync.Mutex
-	blockedToolCallIDs   map[string]time.Time
+	sandboxBlockSeenMu sync.Mutex
+	sandboxBlockSeen   map[string]struct{}
+	sandboxBlockOrder  []string
 
 	// Server management
 	listener net.Listener
@@ -490,12 +484,13 @@ func NewProxyProtectionFromConfig(protectionConfig *ProtectionConfig, logChan ch
 		singleSessionTokenLimit: singleSessionTokenLimit,
 		dailyTokenLimit:         dailyTokenLimit,
 		initialDailyUsage:       initialDailyUsage,
-		streamBuffer:            NewStreamBuffer(),
 		logChan:                 logChan,
 		records:                 NewRecordStore(),
 		auditTracker:            NewAuditChainTracker(),
-		recoveryMu:              &sync.Mutex{},
-		blockedToolCallIDs:      make(map[string]time.Time),
+		chains:                  make(map[string]*SecurityChainState),
+		requestToChain:          make(map[string]securityChainBinding),
+		toolCallToChains:        make(map[string]map[string]securityChainBinding),
+		requestStates:           make(map[string]*RequestRuntimeState),
 		requestCtxToID:          make(map[context.Context]requestContextBinding),
 	}
 
@@ -797,21 +792,54 @@ func (pp *ProxyProtection) emitMonitorSecurityDecision(status, reason string, bl
 	})
 }
 
+func buildSecurityEventDetail(detail string, chainMeta securityChainMetadata) string {
+	detail = strings.TrimSpace(detail)
+	if chainMeta.ChainID == "" && chainMeta.Source == "" && !chainMeta.Degraded && chainMeta.DegradeReason == "" {
+		return detail
+	}
+
+	data := make(map[string]interface{})
+	if detail != "" {
+		if err := json.Unmarshal([]byte(detail), &data); err != nil {
+			data = map[string]interface{}{"message": detail}
+		}
+	}
+	if chainMeta.ChainID != "" {
+		data["instruction_chain_id"] = chainMeta.ChainID
+	}
+	if chainMeta.Source != "" {
+		data["chain_source"] = chainMeta.Source
+	}
+	data["chain_degraded"] = chainMeta.Degraded
+	if chainMeta.DegradeReason != "" {
+		data["chain_degrade_reason"] = chainMeta.DegradeReason
+	}
+
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		return detail
+	}
+	return string(encoded)
+}
+
 // emitSecurityEvent persists a SecurityEvent for the protection monitor's event panel.
 // Must be co-located with any proxy-level interception (blockedCount++, quota/sandbox
 // block) so the "intercept count" and "event list" remain monotonically consistent.
 // Source is fixed to "react_agent" to align with the existing UI badge taxonomy.
 // Fail-open: persistence failures inside AddSecurityEvent must not block the proxy flow.
 func (pp *ProxyProtection) emitSecurityEvent(requestID, eventType, actionDesc, riskType, detail string) {
+	chainMeta := pp.chainMetadataForRequest(requestID)
+	eventDetail := buildSecurityEventDetail(detail, chainMeta)
 	shepherd.GetSecurityEventBuffer().AddSecurityEvent(shepherd.SecurityEvent{
-		EventType:  eventType,
-		ActionDesc: actionDesc,
-		RiskType:   riskType,
-		Detail:     detail,
-		Source:     "react_agent",
-		AssetName:  pp.assetName,
-		AssetID:    pp.assetID,
-		RequestID:  requestID,
+		EventType:          eventType,
+		ActionDesc:         actionDesc,
+		RiskType:           riskType,
+		Detail:             eventDetail,
+		Source:             "react_agent",
+		AssetName:          pp.assetName,
+		AssetID:            pp.assetID,
+		RequestID:          requestID,
+		InstructionChainID: chainMeta.ChainID,
 	})
 }
 
@@ -880,6 +908,9 @@ func (pp *ProxyProtection) updateTruthRecord(requestID string, update func(r *Tr
 		if r.AssetID == "" {
 			r.AssetID = pp.assetID
 		}
+		if r.InstructionChainID == "" {
+			r.InstructionChainID = pp.chainIDForRequest(requestID)
+		}
 		update(r)
 	})
 	if snapshot != nil {
@@ -900,14 +931,37 @@ func (pp *ProxyProtection) activeRequestID() string {
 	if pp == nil {
 		return ""
 	}
-	if pp.streamBuffer != nil {
-		if reqID := strings.TrimSpace(pp.streamBuffer.RequestID()); reqID != "" {
-			return reqID
-		}
-	}
 	pp.auditMu.Lock()
 	defer pp.auditMu.Unlock()
 	return strings.TrimSpace(pp.currentRequestID)
+}
+
+func (pp *ProxyProtection) createDegradedRequestContext(ctx context.Context, reason string) string {
+	if pp == nil {
+		return ""
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "missing_request_context"
+	}
+	requestID := fmt.Sprintf("req_degraded_%d", time.Now().UnixNano())
+	chain := pp.createSecurityChain(requestID, securityChainSourceTemp, reason)
+	chainID := ""
+	if chain != nil {
+		chainID = chain.ChainID
+	}
+	pp.createRequestRuntimeState(requestID, chainID, nil, nil)
+	if ctx != nil {
+		pp.bindRequestContext(ctx, requestID)
+	}
+	logSecurityFlowWarning(
+		securityFlowStageChain,
+		"request_context_degraded: request_id=%s instruction_chain_id=%s reason=%s",
+		requestID,
+		chainID,
+		reason,
+	)
+	return requestID
 }
 
 func (pp *ProxyProtection) bindRequestContext(ctx context.Context, requestID string) {
@@ -961,11 +1015,16 @@ func (pp *ProxyProtection) requestIDFromContext(ctx context.Context) string {
 		return ""
 	}
 	now := time.Now()
+	reason := "missing_request_context"
 	if ctx != nil {
 		pp.requestCtxMu.Lock()
 		if pp.requestCtxToID != nil {
+			expiredCurrent := false
 			for key, binding := range pp.requestCtxToID {
 				if now.After(binding.ExpiresAt) {
+					if key == ctx {
+						expiredCurrent = true
+					}
 					delete(pp.requestCtxToID, key)
 				}
 			}
@@ -977,16 +1036,16 @@ func (pp *ProxyProtection) requestIDFromContext(ctx context.Context) string {
 					return requestID
 				}
 			}
+			if expiredCurrent {
+				reason = "expired_request_context"
+			}
 		}
 		pp.requestCtxMu.Unlock()
-	}
-	fallbackID := pp.activeRequestID()
-	if fallbackID != "" {
-		logging.Info("[AuditChain] resolve request_id fallback: request_id=%s source=active_request", fallbackID)
 	} else {
-		logging.Info("[AuditChain] resolve request_id failed: source=context_and_active_empty")
+		reason = "nil_request_context"
 	}
-	return fallbackID
+	logging.Warning("[AuditChain] resolve request_id degraded: reason=%s", reason)
+	return pp.createDegradedRequestContext(ctx, reason)
 }
 
 func (pp *ProxyProtection) sendTerminalLog(message string) {
@@ -1104,10 +1163,12 @@ func (pp *ProxyProtection) ResetStatistics() {
 	pp.requestCount = 0
 	pp.metricsMu.Unlock()
 
-	// Reset stream buffer if exists
-	if pp.streamBuffer != nil {
-		pp.streamBuffer.ClearAll()
-	}
+	pp.chainMu.Lock()
+	pp.chains = make(map[string]*SecurityChainState)
+	pp.requestToChain = make(map[string]securityChainBinding)
+	pp.toolCallToChains = make(map[string]map[string]securityChainBinding)
+	pp.requestStates = make(map[string]*RequestRuntimeState)
+	pp.chainMu.Unlock()
 
 	pp.sendTerminalLog("统计数据已重置")
 }

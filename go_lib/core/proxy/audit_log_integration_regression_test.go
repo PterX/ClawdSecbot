@@ -155,7 +155,6 @@ func TestOnRequest_SandboxShortCircuitWaitsForUpstreamResponse(t *testing.T) {
 	pp := &ProxyProtection{
 		assetName:    "openclaw",
 		assetID:      "openclaw:a1",
-		streamBuffer: NewStreamBuffer(),
 		shepherdGate: &shepherd.ShepherdGate{},
 		auditTracker: tracker,
 		ctx:          context.Background(),

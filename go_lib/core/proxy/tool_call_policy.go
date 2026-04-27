@@ -2,9 +2,10 @@ package proxy
 
 import (
 	"context"
-	"fmt"
-	"regexp"
+	"encoding/json"
 	"strings"
+
+	"go_lib/core/shepherd"
 
 	"github.com/openai/openai-go"
 )
@@ -25,219 +26,122 @@ type toolCallPolicyHook interface {
 	Evaluate(ctx context.Context, pp *ProxyProtection, policyCtx toolCallPolicyContext) toolCallPolicyResult
 }
 
-type ruleToolCallPolicyHook struct{}
+type shepherdToolCallPolicyHook struct{}
 
-func (ruleToolCallPolicyHook) Name() string {
-	return "rule_tool_call"
+func (shepherdToolCallPolicyHook) Name() string {
+	return "shepherd_tool_call"
 }
 
-var (
-	toolCallSensitivePathPattern = regexp.MustCompile(`(?i)(\.ssh/(id_rsa|id_ed25519)|/etc/shadow|\.env(\.|$|\b)|keychain|login\.keychain|cookies?(\.sqlite)?|browser.*cookies?|mail/(v[0-9]+|data)|邮件|密钥|凭证)`)
-	toolCallDestructivePattern   = regexp.MustCompile(`(?i)(\brm\s+-[^\s]*r[^\s]*f|\bdelete(\b|[_-])|\bremove(\b|[_-])|删除|清空|wipe|format)`)
-	toolCallExfilPattern         = regexp.MustCompile(`(?i)(\bcurl\b|\bwget\b|\bnc\b|\bscp\b|\brsync\b|http[s]?://|上传|外发|转发|发送到邮箱|send_email|forward_email)`)
-	toolCallPersistencePattern   = regexp.MustCompile(`(?i)(crontab|launch(agent|daemon)|systemd|\.bashrc|\.zshrc|shell profile|开机启动|持久化)`)
-	toolCallScriptExecPattern    = regexp.MustCompile(`(?i)(\bsh\s+-c\b|\bpython\s+-c\b|\bnode\s+-e\b|powershell|osascript|eval\(|执行脚本|运行脚本)`)
-)
-
-func (ruleToolCallPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtection, policyCtx toolCallPolicyContext) toolCallPolicyResult {
-	_ = ctx
-	if len(policyCtx.ToolCalls) == 0 {
+func (shepherdToolCallPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtection, policyCtx toolCallPolicyContext) toolCallPolicyResult {
+	if len(policyCtx.ToolCalls) == 0 || pp == nil || pp.shepherdGate == nil {
 		return toolCallPolicyResult{}
 	}
 	pp.sendSecurityFlowLog(securityFlowStageToolCall, "analysis_start: tool_call_count=%d", len(policyCtx.ToolCalls))
 
-	var userRules *UserRules
-	if pp != nil && pp.shepherdGate != nil {
-		if rules := pp.shepherdGate.GetUserRules(); rules != nil {
-			userRules = rules
-		}
-	}
-
+	toolCallInfos := make([]ToolCallInfo, 0, len(policyCtx.ToolCalls))
 	for _, tc := range policyCtx.ToolCalls {
-		decision := inspectToolCallRisk(pp, tc, userRules)
-		if decision != nil {
-			pp.sendSecurityFlowLog(securityFlowStageToolCall, "decision: action=%s tool=%s tool_call_id=%s risk_type=%s reason=%s", decision.normalizedAction(), tc.Function.Name, tc.ID, decision.RiskType, decision.Reason)
-			return toolCallPolicyResult{
-				Decision: decision,
-				Handled:  true,
-				Pass:     false,
+		info := ToolCallInfo{
+			Name:       tc.Function.Name,
+			RawArgs:    tc.Function.Arguments,
+			ToolCallID: tc.ID,
+		}
+		if pp.toolValidator != nil {
+			info.IsSensitive = pp.toolValidator.IsSensitive(tc.Function.Name)
+		}
+		if tc.Function.Arguments != "" {
+			var args map[string]interface{}
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err == nil {
+				info.Arguments = args
 			}
 		}
-	}
-	pp.sendSecurityFlowLog(securityFlowStageToolCall, "decision: action=ALLOW")
-	return toolCallPolicyResult{}
-}
-
-func inspectToolCallRisk(pp *ProxyProtection, tc openai.ChatCompletionMessageToolCall, userRules *UserRules) *securityPolicyDecision {
-	toolName := strings.TrimSpace(tc.Function.Name)
-	rawArgs := strings.TrimSpace(tc.Function.Arguments)
-	evidence := truncateString(redactSecurityEvidence(strings.TrimSpace(toolName+" "+rawArgs)), 240)
-
-	if pp != nil && pp.toolValidator != nil {
-		validation := pp.toolValidator.ValidateTool(toolName, rawArgs)
-		if validation != nil && !validation.Allowed {
-			return &securityPolicyDecision{
-				Status:          decisionActionNeedsConfirm,
-				Action:          decisionActionNeedsConfirm,
-				ActionDesc:      fmt.Sprintf("Tool call blocked by configured tool rule: %s", toolName),
-				Reason:          validation.Reason,
-				RiskType:        riskHighRiskOperation,
-				RiskLevel:       normalizeToolRiskLevel(validation.RiskLevel),
-				HookStage:       hookStageToolCall,
-				ToolCallID:      tc.ID,
-				EvidenceSummary: evidence,
-			}
-		}
+		toolCallInfos = append(toolCallInfos, info)
 	}
 
-	if matched, rule := matchesStructuredSemanticRule(toolName, rawArgs, userRules, hookStageToolCall); matched {
-		action := normalizeRuleAction(rule.Action)
-		if action == decisionActionAllow {
-			return nil
-		}
-		riskType := strings.TrimSpace(rule.RiskType)
-		if riskType == "" {
-			riskType = riskHighRiskOperation
-		}
-		return &securityPolicyDecision{
-			Status:          action,
-			Action:          action,
-			ActionDesc:      fmt.Sprintf("Tool call matches user-defined semantic rule: %s", toolName),
-			Reason:          fmt.Sprintf("Tool call matches user-defined rule: %s", rule.Description),
-			RiskType:        riskType,
-			RiskLevel:       riskLevelHigh,
-			HookStage:       hookStageToolCall,
-			ToolCallID:      tc.ID,
-			EvidenceSummary: evidence,
-		}
+	_, _, chainMeta, hasChain := pp.securityChainContext(policyCtx.RequestID)
+	if hasChain && chainMeta.Degraded {
+		pp.sendSecurityFlowLog(securityFlowStageChain, "chain_degraded_context: request_id=%s instruction_chain_id=%s reason=%s", policyCtx.RequestID, chainMeta.ChainID, chainMeta.DegradeReason)
 	}
 
-	searchText := strings.ToLower(toolName + " " + rawArgs)
-	switch {
-	case toolCallSensitivePathPattern.MatchString(searchText):
-		return &securityPolicyDecision{
-			Status:          decisionActionNeedsConfirm,
-			Action:          decisionActionNeedsConfirm,
-			ActionDesc:      fmt.Sprintf("Sensitive resource access requires confirmation: %s", toolName),
-			Reason:          "Tool call attempts to access sensitive files or private data.",
-			RiskType:        riskSensitiveDataExfil,
-			RiskLevel:       riskLevelHigh,
-			HookStage:       hookStageToolCall,
-			ToolCallID:      tc.ID,
-			EvidenceSummary: evidence,
-		}
-	case toolCallDestructivePattern.MatchString(searchText):
-		return &securityPolicyDecision{
-			Status:          decisionActionNeedsConfirm,
-			Action:          decisionActionNeedsConfirm,
-			ActionDesc:      fmt.Sprintf("Destructive tool call requires confirmation: %s", toolName),
-			Reason:          "Tool call appears to delete, remove, wipe, or format data.",
-			RiskType:        riskHighRiskOperation,
-			RiskLevel:       riskLevelHigh,
-			HookStage:       hookStageToolCall,
-			ToolCallID:      tc.ID,
-			EvidenceSummary: evidence,
-		}
-	case toolCallExfilPattern.MatchString(searchText):
-		return &securityPolicyDecision{
-			Status:          decisionActionNeedsConfirm,
-			Action:          decisionActionNeedsConfirm,
-			ActionDesc:      fmt.Sprintf("External data transfer requires confirmation: %s", toolName),
-			Reason:          "Tool call may transfer data to an external destination.",
-			RiskType:        riskSensitiveDataExfil,
-			RiskLevel:       riskLevelHigh,
-			HookStage:       hookStageToolCall,
-			ToolCallID:      tc.ID,
-			EvidenceSummary: evidence,
-		}
-	case toolCallPersistencePattern.MatchString(searchText):
-		return &securityPolicyDecision{
-			Status:          decisionActionNeedsConfirm,
-			Action:          decisionActionNeedsConfirm,
-			ActionDesc:      fmt.Sprintf("Persistence or system configuration change requires confirmation: %s", toolName),
-			Reason:          "Tool call appears to modify startup, persistence, or shell configuration.",
-			RiskType:        riskPrivilegeAbuse,
-			RiskLevel:       riskLevelHigh,
-			HookStage:       hookStageToolCall,
-			ToolCallID:      tc.ID,
-			EvidenceSummary: evidence,
-		}
-	case toolCallScriptExecPattern.MatchString(searchText):
-		return &securityPolicyDecision{
-			Status:          decisionActionNeedsConfirm,
-			Action:          decisionActionNeedsConfirm,
-			ActionDesc:      fmt.Sprintf("Script execution requires confirmation: %s", toolName),
-			Reason:          "Tool call executes script or code and requires confirmation.",
-			RiskType:        riskUnexpectedCodeExecution,
-			RiskLevel:       riskLevelHigh,
-			HookStage:       hookStageToolCall,
-			ToolCallID:      tc.ID,
-			EvidenceSummary: evidence,
-		}
-	default:
-		return nil
+	checkCtx := pp.ctx
+	if checkCtx == nil {
+		checkCtx = context.Background()
+	}
+	checkCtx = shepherd.WithBotID(checkCtx, pp.assetID)
+	decision, err := pp.shepherdGate.CheckToolCall(checkCtx, toolCallInfos, nil, policyCtx.RequestID)
+
+	pp.statsMu.Lock()
+	pp.analysisCount++
+	pp.statsMu.Unlock()
+	pp.sendMetricsToCallback()
+
+	if decision != nil && decision.Usage != nil {
+		pp.metricsMu.Lock()
+		pp.auditTokens += decision.Usage.TotalTokens
+		pp.auditPromptTokens += decision.Usage.PromptTokens
+		pp.auditCompletionTokens += decision.Usage.CompletionTokens
+		pp.metricsMu.Unlock()
+		pp.sendMetricsToCallback()
+		pp.sendSecurityFlowLog(securityFlowStageToolCall, "analysis_token_usage: total=%d prompt=%d completion=%d",
+			decision.Usage.TotalTokens, decision.Usage.PromptTokens, decision.Usage.CompletionTokens)
+	}
+
+	if err != nil {
+		logSecurityFlowError(securityFlowStageToolCall, "analysis_failed: err=%v action=fail_open", err)
+		return toolCallPolicyResult{}
+	}
+	if decision == nil || decision.Allowed == nil || *decision.Allowed || decision.Status == "ALLOWED" {
+		pp.sendSecurityFlowLog(securityFlowStageToolCall, "decision: action=ALLOW")
+		return toolCallPolicyResult{}
+	}
+
+	policyDecision := securityPolicyDecisionFromToolCallLLM(decision, toolCallInfos)
+	if pp.consumeConfirmedToolCallGrantForRequest(policyCtx.RequestID, policyDecision) {
+		pp.sendSecurityFlowLog(securityFlowStageToolCall, "decision: action=ALLOW reason=confirmed_matching_tool_call risk_type=%s", policyDecision.RiskType)
+		return toolCallPolicyResult{}
+	}
+	pp.sendSecurityFlowLog(securityFlowStageToolCall, "decision: action=%s risk_type=%s reason=%s", policyDecision.normalizedAction(), policyDecision.RiskType, policyDecision.Reason)
+	return toolCallPolicyResult{
+		Decision: &policyDecision,
+		Handled:  true,
+		Pass:     false,
 	}
 }
 
-func matchesStructuredSemanticRule(toolName, rawArgs string, rules *UserRules, stage string) (bool, shepherdRuleView) {
-	if rules == nil {
-		return false, shepherdRuleView{}
+func securityPolicyDecisionFromToolCallLLM(decision *shepherd.ShepherdDecision, toolCalls []ToolCallInfo) securityPolicyDecision {
+	action := decisionActionNeedsConfirm
+	if strings.EqualFold(strings.TrimSpace(decision.Status), decisionActionBlock) {
+		action = decisionActionBlock
 	}
-	text := strings.ToLower(toolName + " " + rawArgs)
-	for _, rule := range rules.SemanticRules {
-		if !rule.Enabled || !semanticRuleAppliesTo(rule.AppliesTo, stage) {
-			continue
-		}
-		ruleText := strings.ToLower(strings.TrimSpace(rule.ID + " " + rule.Description))
-		if ruleText == "" {
-			continue
-		}
-		if semanticRuleMatchesText(ruleText, text) {
-			return true, shepherdRuleView{
-				Description: rule.Description,
-				Action:      rule.Action,
-				RiskType:    rule.RiskType,
-			}
-		}
+	riskType := strings.TrimSpace(decision.RiskType)
+	if riskType == "" {
+		riskType = riskHighRiskOperation
 	}
-	return false, shepherdRuleView{}
-}
-
-type shepherdRuleView struct {
-	Description string
-	Action      string
-	RiskType    string
-}
-
-func semanticRuleMatchesText(rule, text string) bool {
-	if strings.Contains(rule, "*") {
-		re := "^" + strings.ReplaceAll(regexp.QuoteMeta(rule), `\*`, ".*") + "$"
-		if matched, _ := regexp.MatchString(re, text); matched {
-			return true
+	reason := strings.TrimSpace(decision.Reason)
+	if reason == "" {
+		reason = "Tool call risk detected by ShepherdGate ReAct analysis."
+	}
+	actionDesc := strings.TrimSpace(decision.ActionDesc)
+	if actionDesc == "" {
+		actionDesc = "Tool call risk detected by ShepherdGate ReAct analysis"
+	}
+	toolCallID := ""
+	evidenceParts := make([]string, 0, len(toolCalls))
+	for _, tc := range toolCalls {
+		if toolCallID == "" {
+			toolCallID = tc.ToolCallID
 		}
+		evidenceParts = append(evidenceParts, strings.TrimSpace(tc.Name+" "+tc.RawArgs))
 	}
-	switch {
-	case strings.Contains(rule, "删除") || strings.Contains(rule, "delete") || strings.Contains(rule, "remove"):
-		return toolCallDestructivePattern.MatchString(text)
-	case strings.Contains(rule, "邮件") || strings.Contains(rule, "mail") || strings.Contains(rule, "email"):
-		return strings.Contains(text, "mail") || strings.Contains(text, "email") || strings.Contains(text, "邮件")
-	case strings.Contains(rule, "ssh") || strings.Contains(rule, "key") || strings.Contains(rule, "密钥"):
-		return strings.Contains(text, ".ssh") || strings.Contains(text, "key") || strings.Contains(text, "密钥")
-	case strings.Contains(rule, "cookie"):
-		return strings.Contains(text, "cookie")
-	case strings.Contains(rule, "配置") || strings.Contains(rule, "config"):
-		return strings.Contains(text, "config") || strings.Contains(text, "配置") || toolCallPersistencePattern.MatchString(text)
-	default:
-		return strings.Contains(text, rule)
-	}
-}
-
-func normalizeToolRiskLevel(level string) string {
-	switch strings.ToLower(strings.TrimSpace(level)) {
-	case riskLevelLow, riskLevelMedium, riskLevelHigh, riskLevelCritical:
-		return strings.ToLower(strings.TrimSpace(level))
-	default:
-		return riskLevelHigh
+	return securityPolicyDecision{
+		Status:          action,
+		Action:          action,
+		ActionDesc:      actionDesc,
+		Reason:          reason,
+		RiskType:        riskType,
+		RiskLevel:       riskLevelHigh,
+		HookStage:       hookStageToolCall,
+		ToolCallID:      toolCallID,
+		EvidenceSummary: truncateString(redactSecurityEvidence(strings.Join(evidenceParts, "\n")), 240),
 	}
 }
 
@@ -251,6 +155,57 @@ func normalizeRuleAction(action string) string {
 		return decisionActionRedact
 	default:
 		return decisionActionNeedsConfirm
+	}
+}
+
+type shepherdRuleView struct {
+	Description string
+	Action      string
+	RiskType    string
+}
+
+func semanticRuleMatchesText(rule, text string) bool {
+	rule = strings.TrimSpace(rule)
+	text = strings.TrimSpace(text)
+	if rule == "" || text == "" {
+		return false
+	}
+	if !strings.Contains(rule, "*") {
+		if strings.Contains(text, rule) {
+			return true
+		}
+		return semanticRuleKeywordMatches(rule, text)
+	}
+	parts := strings.Split(rule, "*")
+	cursor := 0
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		idx := strings.Index(text[cursor:], part)
+		if idx < 0 {
+			return false
+		}
+		cursor += idx + len(part)
+	}
+	return true
+}
+
+func semanticRuleKeywordMatches(rule, text string) bool {
+	switch {
+	case strings.Contains(rule, "删除") || strings.Contains(rule, "delete") || strings.Contains(rule, "remove"):
+		return strings.Contains(text, "删除") || strings.Contains(text, "delete") || strings.Contains(text, "remove")
+	case strings.Contains(rule, "邮件") || strings.Contains(rule, "mail") || strings.Contains(rule, "email"):
+		return strings.Contains(text, "邮件") || strings.Contains(text, "mail") || strings.Contains(text, "email")
+	case strings.Contains(rule, "ssh") || strings.Contains(rule, "key") || strings.Contains(rule, "密钥"):
+		return strings.Contains(text, "ssh") || strings.Contains(text, "key") || strings.Contains(text, "密钥")
+	case strings.Contains(rule, "cookie"):
+		return strings.Contains(text, "cookie")
+	case strings.Contains(rule, "配置") || strings.Contains(rule, "config"):
+		return strings.Contains(text, "配置") || strings.Contains(text, "config")
+	default:
+		return false
 	}
 }
 
@@ -269,7 +224,7 @@ func semanticRuleAppliesTo(appliesTo []string, stage string) bool {
 
 func (pp *ProxyProtection) runToolCallPolicyHooks(ctx context.Context, policyCtx toolCallPolicyContext) toolCallPolicyResult {
 	hooks := []toolCallPolicyHook{
-		ruleToolCallPolicyHook{},
+		shepherdToolCallPolicyHook{},
 	}
 	for _, hook := range hooks {
 		result := hook.Evaluate(ctx, pp, policyCtx)

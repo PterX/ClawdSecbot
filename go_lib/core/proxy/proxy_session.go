@@ -413,27 +413,53 @@ func toJSONString(v interface{}) string {
 	return string(b)
 }
 
+func redactProxyConfigForLog(configJSON string) string {
+	var raw interface{}
+	if err := json.Unmarshal([]byte(configJSON), &raw); err != nil {
+		return redactSecurityEvidence(configJSON)
+	}
+	redactSensitiveJSONValue(raw)
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return redactSecurityEvidence(configJSON)
+	}
+	return string(b)
+}
+
+func redactSensitiveJSONValue(value interface{}) {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for key, child := range typed {
+			if isSensitiveConfigKey(key) {
+				if text, ok := child.(string); ok && strings.TrimSpace(text) != "" {
+					typed[key] = "[REDACTED_SECRET]"
+					continue
+				}
+			}
+			redactSensitiveJSONValue(child)
+		}
+	case []interface{}:
+		for _, child := range typed {
+			redactSensitiveJSONValue(child)
+		}
+	}
+}
+
+func isSensitiveConfigKey(key string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(key, "_", ""), "-", ""))
+	return strings.Contains(normalized, "apikey") ||
+		strings.Contains(normalized, "secret") ||
+		strings.Contains(normalized, "token") ||
+		strings.Contains(normalized, "password") ||
+		strings.Contains(normalized, "credential") ||
+		strings.Contains(normalized, "auth")
+}
+
 // ==================== 内部包装函数（供 main.go FFI 调用）====================
 
 // StartProtectionProxyInternal 启动代理防护
 func StartProtectionProxyInternal(protectionConfigJSON string) string {
-	// 对敏感数据脱敏后记录日志
-	maskedJSON := protectionConfigJSON
-	if len(maskedJSON) > 200 {
-		var raw map[string]interface{}
-		if err := json.Unmarshal([]byte(protectionConfigJSON), &raw); err == nil {
-			if key, ok := raw["api_key"].(string); ok && len(key) > 8 {
-				raw["api_key"] = key[:4] + "****" + key[len(key)-4:]
-			}
-			if secret, ok := raw["secret_key"].(string); ok && len(secret) > 8 {
-				raw["secret_key"] = secret[:4] + "****" + secret[len(secret)-4:]
-			}
-			if b, err := json.Marshal(raw); err == nil {
-				maskedJSON = string(b)
-			}
-		}
-	}
-	logging.Info("[StartProtectionProxy] Received config: %s", maskedJSON)
+	logging.Info("[StartProtectionProxy] Received config: %s", redactProxyConfigForLog(protectionConfigJSON))
 
 	var protectionConfig ProtectionConfig
 	if err := json.Unmarshal([]byte(protectionConfigJSON), &protectionConfig); err != nil {

@@ -35,18 +35,22 @@ const (
 )
 
 type riskEventMetadata struct {
-	RiskType        string   `json:"risk_type"`
-	RiskLevel       string   `json:"risk_level,omitempty"`
-	OWASPAgenticIDs []string `json:"owasp_agentic_ids,omitempty"`
-	DecisionAction  string   `json:"decision_action,omitempty"`
-	HookStage       string   `json:"hook_stage,omitempty"`
-	ToolCallID      string   `json:"tool_call_id,omitempty"`
-	RequestID       string   `json:"request_id,omitempty"`
-	AssetID         string   `json:"asset_id,omitempty"`
-	EvidenceSummary string   `json:"evidence_summary,omitempty"`
-	WasRewritten    bool     `json:"was_rewritten,omitempty"`
-	WasQuarantined  bool     `json:"was_quarantined,omitempty"`
-	Reason          string   `json:"reason,omitempty"`
+	RiskType           string   `json:"risk_type"`
+	RiskLevel          string   `json:"risk_level,omitempty"`
+	OWASPAgenticIDs    []string `json:"owasp_agentic_ids,omitempty"`
+	DecisionAction     string   `json:"decision_action,omitempty"`
+	HookStage          string   `json:"hook_stage,omitempty"`
+	ToolCallID         string   `json:"tool_call_id,omitempty"`
+	RequestID          string   `json:"request_id,omitempty"`
+	AssetID            string   `json:"asset_id,omitempty"`
+	InstructionChainID string   `json:"instruction_chain_id,omitempty"`
+	ChainSource        string   `json:"chain_source,omitempty"`
+	ChainDegraded      bool     `json:"chain_degraded,omitempty"`
+	ChainDegradeReason string   `json:"chain_degrade_reason,omitempty"`
+	EvidenceSummary    string   `json:"evidence_summary,omitempty"`
+	WasRewritten       bool     `json:"was_rewritten,omitempty"`
+	WasQuarantined     bool     `json:"was_quarantined,omitempty"`
+	Reason             string   `json:"reason,omitempty"`
 }
 
 func owaspAgenticIDsForRisk(riskType string) []string {
@@ -91,6 +95,11 @@ func buildRiskEventDetail(meta riskEventMetadata) string {
 func (pp *ProxyProtection) emitRiskSecurityEvent(requestID, eventType, actionDesc string, meta riskEventMetadata) {
 	meta.RequestID = strings.TrimSpace(requestID)
 	meta.AssetID = strings.TrimSpace(pp.assetID)
+	chainMeta := pp.chainMetadataForRequest(requestID)
+	meta.InstructionChainID = chainMeta.ChainID
+	meta.ChainSource = chainMeta.Source
+	meta.ChainDegraded = chainMeta.Degraded
+	meta.ChainDegradeReason = chainMeta.DegradeReason
 	if meta.RiskType == "" {
 		meta.RiskType = riskHighRiskOperation
 	}
