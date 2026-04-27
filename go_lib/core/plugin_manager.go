@@ -213,6 +213,38 @@ func (pm *PluginManager) ScanAllAssets() ([]Asset, error) {
 	return allAssets, nil
 }
 
+// ScanAssetsByPlugin scans assets for a single registered plugin and binds
+// discovered asset instances for later protection/risk routing.
+func (pm *PluginManager) ScanAssetsByPlugin(assetName string) ([]Asset, error) {
+	plugin := pm.GetPluginByAssetName(assetName)
+	if plugin == nil {
+		return nil, fmt.Errorf("plugin not found: %s", assetName)
+	}
+
+	pluginAssetName := plugin.GetAssetName()
+	logging.Info("Scanning assets with single plugin assetName=%s", pluginAssetName)
+	assets, err := plugin.ScanAssets()
+	if err != nil {
+		return nil, err
+	}
+
+	scannedAssetIDs := make(map[string]struct{}, len(assets))
+	for i := range assets {
+		if strings.TrimSpace(assets[i].SourcePlugin) == "" {
+			assets[i].SourcePlugin = pluginAssetName
+		}
+		assetID := strings.TrimSpace(assets[i].ID)
+		if assetID != "" {
+			scannedAssetIDs[assetID] = struct{}{}
+		}
+		pm.bindAssetInstance(plugin, assets[i])
+	}
+	pm.reconcilePluginInstances(pluginAssetName, scannedAssetIDs)
+
+	logging.Info("Single plugin %s found %d assets", pluginAssetName, len(assets))
+	return assets, nil
+}
+
 // AssessAllRisks evaluates risks via all registered plugins.
 // Automatically injects SourcePlugin and best-effort asset_id for downstream routing.
 func (pm *PluginManager) AssessAllRisks(scannedHashes map[string]bool) ([]Risk, error) {
@@ -238,28 +270,7 @@ func (pm *PluginManager) AssessAllRisks(scannedHashes map[string]bool) ([]Risk, 
 			risks = append(risks, vulnRisks...)
 		}
 
-		for i := range risks {
-			risks[i].SourcePlugin = assetName
-			if risks[i].Args == nil {
-				risks[i].Args = map[string]interface{}{}
-			}
-			if _, exists := risks[i].Args["asset_name"]; !exists {
-				risks[i].Args["asset_name"] = assetName
-			}
-			riskAssetID := normalizeRiskAssetID(risks[i].AssetID)
-			if riskAssetID == "" {
-				riskAssetID = normalizeRiskAssetID(anyToString(risks[i].Args["asset_id"]))
-			}
-			if riskAssetID == "" {
-				riskAssetID = singleAssetID
-			}
-			if riskAssetID != "" {
-				risks[i].AssetID = riskAssetID
-				if _, exists := risks[i].Args["asset_id"]; !exists {
-					risks[i].Args["asset_id"] = riskAssetID
-				}
-			}
-		}
+		annotateRisksForPlugin(risks, assetName, singleAssetID)
 		logging.Info("Plugin %s found %d risks", assetName, len(risks))
 		allRisks = append(allRisks, risks...)
 	}
@@ -295,6 +306,56 @@ func (pm *PluginManager) getAssetsByPlugin(assetName string) []Asset {
 }
 
 // MitigateRisk routes a mitigation request by asset_id to the corresponding plugin instance.
+// AssessRisksByPlugin evaluates risks for a single registered plugin.
+func (pm *PluginManager) AssessRisksByPlugin(assetName string, scannedHashes map[string]bool) ([]Risk, error) {
+	plugin := pm.GetPluginByAssetName(assetName)
+	if plugin == nil {
+		return nil, fmt.Errorf("plugin not found: %s", assetName)
+	}
+
+	pluginAssetName := plugin.GetAssetName()
+	logging.Info("Assessing risks with single plugin: %s", pluginAssetName)
+	pluginAssets := pm.getAssetsByPlugin(pluginAssetName)
+	risks, err := plugin.AssessRisks(scannedHashes, pluginAssets)
+	if err != nil {
+		return nil, err
+	}
+	vulnRisks, err := BuildVulnerabilityRisks(plugin, pluginAssets)
+	if err != nil {
+		logging.Warning("Plugin %s vulnerability matching failed: %v", pluginAssetName, err)
+	} else {
+		risks = append(risks, vulnRisks...)
+	}
+
+	annotateRisksForPlugin(risks, pluginAssetName, pm.getSingleAssetIDByPlugin(pluginAssetName))
+	logging.Info("Single plugin %s found %d risks", pluginAssetName, len(risks))
+	return risks, nil
+}
+
+func annotateRisksForPlugin(risks []Risk, assetName, singleAssetID string) {
+	for i := range risks {
+		risks[i].SourcePlugin = assetName
+		if risks[i].Args == nil {
+			risks[i].Args = map[string]interface{}{}
+		}
+		if _, exists := risks[i].Args["asset_name"]; !exists {
+			risks[i].Args["asset_name"] = assetName
+		}
+		riskAssetID := normalizeRiskAssetID(risks[i].AssetID)
+		if riskAssetID == "" {
+			riskAssetID = normalizeRiskAssetID(anyToString(risks[i].Args["asset_id"]))
+		}
+		if riskAssetID == "" {
+			riskAssetID = singleAssetID
+		}
+		if riskAssetID != "" {
+			risks[i].AssetID = riskAssetID
+			if _, exists := risks[i].Args["asset_id"]; !exists {
+				risks[i].Args["asset_id"] = riskAssetID
+			}
+		}
+	}
+}
 func (pm *PluginManager) MitigateRisk(riskInfoJSON string) string {
 	var req map[string]interface{}
 	if err := json.Unmarshal([]byte(riskInfoJSON), &req); err != nil {

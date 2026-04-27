@@ -74,11 +74,26 @@ class _MainPageState extends State<MainPage>
   double get _mainTitleBarHeight => Platform.isLinux ? 40 : 48;
 
   ScanState _scanState = ScanState.idle;
-  final List<String> _logs = [];
   ScanResult? _result;
   final BotScanner _scanner = BotScanner();
+  final List<String> _logs = [];
   StreamSubscription<String>? _logSubscription;
   RescanAction _selectedRescanAction = RescanAction.securityDiscovery;
+  final List<_ScanProbe> _scanProbes = const [
+    _ScanProbe(key: 'openclaw', label: 'OpenClaw'),
+    _ScanProbe(key: 'dintalclaw', label: 'DinTalClaw'),
+    _ScanProbe(key: 'nullclaw', label: 'NullClaw'),
+    _ScanProbe(key: 'qclaw', label: 'QClaw'),
+    _ScanProbe(key: 'hermes', label: 'Hermes'),
+  ];
+  final Map<String, _ScanProbeStatus> _scanProbeStatuses = {};
+  double _scanVisualProgress = 0;
+
+  /// 安全发现过渡界面（区别于全量扫描的插件探测界面）所需的专用状态
+  bool _securityDiscoveryActive = false;
+  List<Asset> _securityDiscoveryAssets = const [];
+  final Map<String, Map<SecurityDiscoveryStage, _StageStatus>>
+  _securityDiscoveryProgress = {};
 
   final Set<String> _protectedAssetIDs = {};
   final Map<String, String> _protectedAssetNamesByID = {};
@@ -141,8 +156,12 @@ class _MainPageState extends State<MainPage>
   void resetUIStateAfterClear() {
     setState(() {
       _scanState = ScanState.idle;
-      _logs.clear();
       _result = null;
+      _scanProbeStatuses.clear();
+      _scanVisualProgress = 0;
+      _securityDiscoveryActive = false;
+      _securityDiscoveryAssets = const [];
+      _securityDiscoveryProgress.clear();
       _protectedAssetIDs.clear();
       _protectedAssetNamesByID.clear();
       _stoppingProtectionAssetIDs.clear();
@@ -295,7 +314,6 @@ class _MainPageState extends State<MainPage>
     _appExitListener?.dispose();
     trayManager.removeListener(this);
     windowManager.removeListener(this);
-    _logSubscription?.cancel();
     _onboardingCompletionTimer?.cancel();
     _scheduledScanTimer?.cancel();
     _externalStateRefreshTimer?.cancel();
@@ -1173,8 +1191,11 @@ class _MainPageState extends State<MainPage>
           }
         }
 
+        final normalizedAssetName = assetName.toLowerCase();
         final requiresExplicitRestore =
-            assetName.toLowerCase() == 'openclaw' || !wasRunning;
+            normalizedAssetName == 'openclaw' ||
+            normalizedAssetName == 'qclaw' ||
+            !wasRunning;
         if (requiresExplicitRestore) {
           final restoreResult = await pluginService.restoreBotDefaultState(
             assetName,
@@ -1541,42 +1562,29 @@ class _MainPageState extends State<MainPage>
 
     setState(() {
       _scanState = ScanState.scanning;
-      _logs.clear();
       _result = null;
     });
+    _initializeScanProbeStatuses();
 
     await windowManager.setSize(AppConstants.windowSize);
-
-    await _logSubscription?.cancel();
-    _logSubscription = _scanner.logStream.listen((log) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _logs.add(log);
-      });
-    });
 
     if (!mounted) return;
     _scanner.setLocalization(l10n);
 
     try {
-      final result = await _scanner.scan();
+      final result = await _scanner.scan(
+        onPluginScanned: _markScanProbeCompleted,
+      );
+      final published = await _publishCompletedScanResult(result);
+      if (!published) {
+        return;
+      }
 
       try {
         await ScanDatabaseService().saveScanResult(result);
       } catch (e) {
         appLogger.error('[MainPage] Failed to save scan result', e);
       }
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _scanState = ScanState.completed;
-        _result = result;
-      });
 
       if (!skipReconcile) {
         try {
@@ -1599,8 +1607,6 @@ class _MainPageState extends State<MainPage>
         });
       }
     } finally {
-      await _logSubscription?.cancel();
-      _logSubscription = null;
       await windowManager.setSize(AppConstants.windowSize);
     }
   }
@@ -1671,6 +1677,23 @@ class _MainPageState extends State<MainPage>
       } catch (e) {
         appLogger.error(
           '[MainPage] Reconcile: failed to stop proxy for $label: $e',
+        );
+      }
+
+      try {
+        final restoreResult = await PluginService().restoreBotDefaultState(
+          assetName,
+          assetID,
+        );
+        if (restoreResult['success'] != true) {
+          appLogger.warning(
+            '[MainPage] Reconcile: restore bot default state failed for $label: '
+            '${restoreResult['error']}',
+          );
+        }
+      } catch (e) {
+        appLogger.warning(
+          '[MainPage] Reconcile: explicit restore failed for $label: $e',
         );
       }
 
@@ -2007,8 +2030,9 @@ class _MainPageState extends State<MainPage>
       if (mounted) {
         setState(() {
           _scanState = ScanState.idle;
-          _logs.clear();
           _result = null;
+          _scanProbeStatuses.clear();
+          _scanVisualProgress = 0;
         });
         await windowManager.setSize(AppConstants.windowSize);
       }
@@ -2052,10 +2076,12 @@ class _MainPageState extends State<MainPage>
     }
 
     final l10n = AppLocalizations.of(context)!;
+    _handleSecurityDiscoveryAssets(const []);
     if (mounted) {
       setState(() {
         _scanState = ScanState.scanning;
         _logs.clear();
+        _securityDiscoveryActive = true;
       });
     }
 
@@ -2079,15 +2105,23 @@ class _MainPageState extends State<MainPage>
         configFound: existingResult.configFound,
         configPath: existingResult.configPath,
         config: existingResult.config,
+        onAssetsUpdated: _handleSecurityDiscoveryAssets,
+        onStageProgress: _handleSecurityDiscoveryStage,
       );
-      await ScanDatabaseService().saveScanResult(refreshedResult);
-      if (!mounted) {
+      final published = await _publishCompletedScanResult(refreshedResult);
+      if (!published) {
         return;
       }
-      setState(() {
-        _scanState = ScanState.completed;
-        _result = refreshedResult;
-      });
+
+      try {
+        await ScanDatabaseService().saveScanResult(refreshedResult);
+      } catch (e) {
+        appLogger.error(
+          '[MainPage] Failed to save security discovery result',
+          e,
+        );
+      }
+
       try {
         await _reconcileAssetsAfterScan(beforeAssetIDs, refreshedResult.assets);
       } catch (e) {
@@ -2110,8 +2144,81 @@ class _MainPageState extends State<MainPage>
     } finally {
       await _logSubscription?.cancel();
       _logSubscription = null;
+      if (mounted) {
+        setState(() {
+          _securityDiscoveryActive = false;
+        });
+      } else {
+        _securityDiscoveryActive = false;
+      }
       await windowManager.setSize(AppConstants.windowSize);
     }
+  }
+
+  /// 先切回完成态，让结果页和“重新扫描”按钮优先可交互；
+  /// 然后再让出一个事件循环周期，执行后续保存与对账收尾。
+  Future<bool> _publishCompletedScanResult(ScanResult result) async {
+    if (!mounted) {
+      return false;
+    }
+    setState(() {
+      _scanState = ScanState.completed;
+      _result = result;
+    });
+    await Future<void>.delayed(Duration.zero);
+    return mounted;
+  }
+
+  /// 使用当前已有资产初始化安全发现过渡界面的三阶段进度
+  void _handleSecurityDiscoveryAssets(List<Asset> assets) {
+    final nextProgress = <String, Map<SecurityDiscoveryStage, _StageStatus>>{
+      for (final asset in assets)
+        asset.id: Map<SecurityDiscoveryStage, _StageStatus>.from(
+          _securityDiscoveryProgress[asset.id] ??
+              {
+                for (final stage in SecurityDiscoveryStage.values)
+                  stage: _StageStatus.pending,
+              },
+        ),
+    };
+
+    if (!mounted) {
+      _securityDiscoveryAssets = List<Asset>.unmodifiable(assets);
+      _securityDiscoveryProgress
+        ..clear()
+        ..addAll(nextProgress);
+      return;
+    }
+    setState(() {
+      _securityDiscoveryAssets = List<Asset>.unmodifiable(assets);
+      _securityDiscoveryProgress
+        ..clear()
+        ..addAll(nextProgress);
+    });
+  }
+
+  /// 阶段状态变化：completed=false 表示开始（running），true 表示完成
+  void _handleSecurityDiscoveryStage(
+    String assetID,
+    SecurityDiscoveryStage stage,
+    bool completed,
+  ) {
+    final stages =
+        _securityDiscoveryProgress[assetID] ??
+        {
+          for (final item in SecurityDiscoveryStage.values)
+            item: _StageStatus.pending,
+        };
+    void apply() {
+      _securityDiscoveryProgress[assetID] = stages;
+      stages[stage] = completed ? _StageStatus.completed : _StageStatus.running;
+    }
+
+    if (!mounted) {
+      apply();
+      return;
+    }
+    setState(apply);
   }
 
   Future<void> _deleteRiskSkillFromFinding(RiskInfo risk) async {
@@ -2423,16 +2530,16 @@ class _MainPageState extends State<MainPage>
       }
     } else if (result is Map && result['action'] == 'skill_scan') {
       if (mounted) {
-        _showSkillScanDialog();
+        _showSkillScanDialog(result['asset_name'] as String?);
       }
     }
   }
 
-  void _showSkillScanDialog() async {
+  void _showSkillScanDialog([String? assetName]) async {
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const SkillScanDialog(),
+      builder: (context) => SkillScanDialog(assetName: assetName),
     );
 
     if (mounted) {
@@ -2484,6 +2591,71 @@ class _MainPageState extends State<MainPage>
     );
   }
 
+  void _initializeScanProbeStatuses() {
+    _scanVisualProgress = 0;
+    _scanProbeStatuses
+      ..clear()
+      ..addEntries(
+        _scanProbes.map(
+          (probe) => MapEntry(probe.key, _ScanProbeStatus.pending),
+        ),
+      );
+    if (_scanProbes.isNotEmpty) {
+      _scanProbeStatuses[_scanProbes.first.key] = _ScanProbeStatus.scanning;
+    }
+  }
+
+  void _markScanProbeCompleted(String assetName, bool detected) {
+    final normalized = assetName.trim().toLowerCase();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      for (final probe in _scanProbes) {
+        if (probe.key != normalized) {
+          continue;
+        }
+        _scanProbeStatuses[probe.key] = detected
+            ? _ScanProbeStatus.detected
+            : _ScanProbeStatus.notDetected;
+        break;
+      }
+
+      final completedCount = _scanProbeStatuses.values
+          .where(
+            (status) =>
+                status == _ScanProbeStatus.detected ||
+                status == _ScanProbeStatus.notDetected,
+          )
+          .length;
+      if (_scanProbes.isNotEmpty) {
+        _scanVisualProgress = completedCount / _scanProbes.length;
+      }
+
+      for (final probe in _scanProbes) {
+        if (_scanProbeStatuses[probe.key] == _ScanProbeStatus.pending) {
+          _scanProbeStatuses[probe.key] = _ScanProbeStatus.scanning;
+          break;
+        }
+      }
+    });
+  }
+
+  String _scanProbeLine(_ScanProbe probe, bool isZh) {
+    final status = _scanProbeStatuses[probe.key] ?? _ScanProbeStatus.pending;
+    final action = isZh ? '正在检测' : 'Checking';
+    switch (status) {
+      case _ScanProbeStatus.detected:
+        return '$action ${probe.label}  √';
+      case _ScanProbeStatus.notDetected:
+        return '$action ${probe.label}  ×';
+      case _ScanProbeStatus.scanning:
+        return '$action ${probe.label}  ...';
+      case _ScanProbeStatus.pending:
+        return '$action ${probe.label}';
+    }
+  }
+
   // ============ UI 构建 ============
 
   @override
@@ -2509,10 +2681,10 @@ class _MainPageState extends State<MainPage>
               child: Stack(
                 children: [
                   AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 520),
-                    reverseDuration: const Duration(milliseconds: 360),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
+                    duration: const Duration(milliseconds: 680),
+                    reverseDuration: const Duration(milliseconds: 520),
+                    switchInCurve: Curves.easeInOutCubicEmphasized,
+                    switchOutCurve: Curves.easeInOutCubic,
                     layoutBuilder: (currentChild, previousChildren) {
                       return Stack(
                         alignment: Alignment.topCenter,
@@ -2809,7 +2981,9 @@ class _MainPageState extends State<MainPage>
       case ScanState.idle:
         return _buildIdleState();
       case ScanState.scanning:
-        return _buildScanningState();
+        return _securityDiscoveryActive
+            ? _buildSecurityDiscoveryState()
+            : _buildScanningState();
       case ScanState.completed:
         return _buildCompletedState();
     }
@@ -2818,15 +2992,15 @@ class _MainPageState extends State<MainPage>
   Widget _buildContentTransition(Widget child, Animation<double> animation) {
     final fadeAnimation = CurvedAnimation(
       parent: animation,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
+      curve: const Interval(0.08, 1, curve: Curves.easeOutCubic),
+      reverseCurve: const Interval(0, 0.9, curve: Curves.easeInCubic),
     );
     final slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.03),
+      begin: const Offset(0, 0.018),
       end: Offset.zero,
     ).animate(fadeAnimation);
     final scaleAnimation = Tween<double>(
-      begin: 0.985,
+      begin: 0.992,
       end: 1,
     ).animate(fadeAnimation);
 
@@ -2958,6 +3132,8 @@ class _MainPageState extends State<MainPage>
 
   Widget _buildScanningState() {
     final l10n = AppLocalizations.of(context)!;
+    final isZh = l10n.localeName.startsWith('zh');
+    final progress = _scanVisualProgress.clamp(0.0, 1.0);
     return Padding(
       key: const ValueKey('scanning'),
       padding: const EdgeInsets.all(24),
@@ -2967,10 +3143,18 @@ class _MainPageState extends State<MainPage>
           Row(
             children: [
               Container(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF6366F1).withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFF6366F1).withValues(alpha: 0.28),
+                          const Color(0xFF8B5CF6).withValues(alpha: 0.18),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFF6366F1).withValues(alpha: 0.18),
+                      ),
                     ),
                     child: const Icon(
                       LucideIcons.loader2,
@@ -2979,7 +3163,12 @@ class _MainPageState extends State<MainPage>
                     ),
                   )
                   .animate(onPlay: (controller) => controller.repeat())
-                  .rotate(duration: 1000.ms),
+                  .rotate(duration: 900.ms)
+                  .then(duration: 900.ms)
+                  .scale(
+                    begin: const Offset(0.96, 0.96),
+                    end: const Offset(1.04, 1.04),
+                  ),
               const SizedBox(width: 12),
               Text(
                 l10n.scanning,
@@ -2991,53 +3180,418 @@ class _MainPageState extends State<MainPage>
               ),
             ],
           ),
-          const SizedBox(height: 24),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              child: ListView.builder(
-                itemCount: _logs.length,
-                itemBuilder: (context, index) {
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isZh ? '扫描进度' : 'Scan Progress',
+                  style: AppFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  isZh ? '正在检测中，请稍后。' : 'Scanning in progress, please wait.',
+                  style: AppFonts.inter(fontSize: 12, color: Colors.white54),
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 8,
+                    backgroundColor: Colors.white.withValues(alpha: 0.08),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Color(0xFF6366F1),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  isZh
+                      ? '已完成 ${(progress * 100).floor()}%'
+                      : '${(progress * 100).floor()}% complete',
+                  style: AppFonts.firaCode(fontSize: 11, color: Colors.white54),
+                ),
+                const SizedBox(height: 8),
+                ..._scanProbes.map((probe) {
+                  final status =
+                      _scanProbeStatuses[probe.key] ?? _ScanProbeStatus.pending;
                   return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '>',
-                              style: AppFonts.firaCode(
-                                fontSize: 12,
-                                color: const Color(0xFF6366F1),
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child:
+                        AnimatedContainer(
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutCubic,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _logs[index],
-                                style: AppFonts.firaCode(
-                                  fontSize: 12,
-                                  color: Colors.white70,
+                              decoration: BoxDecoration(
+                                color: _probeCardColor(status),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: _probeBorderColor(status),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      )
-                      .animate()
-                      .fadeIn(duration: 300.ms)
-                      .slideX(begin: -0.1, end: 0);
-                },
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildProbeStatusIcon(status),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      _scanProbeLine(probe, isZh),
+                                      style: AppFonts.firaCode(
+                                        fontSize: 12,
+                                        color: _probeStatusColor(status),
+                                        height: 1.45,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                            .animate()
+                            .fadeIn(duration: 280.ms)
+                            .slideY(begin: 0.08, end: 0),
+                  );
+                }),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  /// 重新扫描"安全发现"的过渡界面：按资产逐个展示三阶段进度
+  /// （安全基线检查 / Bot 漏洞扫描 / 技能投毒检测）。
+  Widget _buildSecurityDiscoveryState() {
+    final l10n = AppLocalizations.of(context)!;
+    final isZh = l10n.localeName.startsWith('zh');
+    final assets = _securityDiscoveryAssets;
+    final stageCount = SecurityDiscoveryStage.values.length;
+    final totalUnits = assets.length * stageCount;
+    final completedUnits = _securityDiscoveryProgress.values.fold<int>(
+      0,
+      (acc, stages) =>
+          acc + stages.values.where((s) => s == _StageStatus.completed).length,
+    );
+    final progress = totalUnits == 0
+        ? 0.0
+        : (completedUnits / totalUnits).clamp(0.0, 1.0);
+
+    return Padding(
+      key: const ValueKey('security_discovery'),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFF6366F1).withValues(alpha: 0.28),
+                          const Color(0xFF8B5CF6).withValues(alpha: 0.18),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFF6366F1).withValues(alpha: 0.18),
+                      ),
+                    ),
+                    child: const Icon(
+                      LucideIcons.radar,
+                      color: Color(0xFF6366F1),
+                      size: 20,
+                    ),
+                  )
+                  .animate(onPlay: (controller) => controller.repeat())
+                  .rotate(duration: 1400.ms),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isZh ? '安全发现中' : 'Security Discovery',
+                      style: AppFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isZh
+                          ? '仅对已发现资产执行基线 / 漏洞 / 技能投毒检测'
+                          : 'Running baseline, vulnerability and skill-poison checks on discovered assets',
+                      style: AppFonts.inter(
+                        fontSize: 12,
+                        color: Colors.white54,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        isZh
+                            ? '共 ${assets.length} 个资产 · ${SecurityDiscoveryStage.values.length} 项检测'
+                            : '${assets.length} assets · ${SecurityDiscoveryStage.values.length} checks',
+                        style: AppFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${(progress * 100).floor()}%',
+                      style: AppFonts.firaCode(
+                        fontSize: 12,
+                        color: const Color(0xFF6366F1),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: totalUnits == 0 ? null : progress,
+                    minHeight: 6,
+                    backgroundColor: Colors.white.withValues(alpha: 0.08),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Color(0xFF6366F1),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Expanded(
+            child: assets.isEmpty
+                ? _buildSecurityDiscoveryPlaceholder(isZh)
+                : ListView.separated(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    itemCount: assets.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final asset = assets[index];
+                      return _buildSecurityDiscoveryAssetCard(asset, isZh);
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSecurityDiscoveryPlaceholder(bool isZh) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(LucideIcons.loader2, size: 28, color: Color(0xFF6366F1))
+              .animate(onPlay: (controller) => controller.repeat())
+              .rotate(duration: 900.ms),
+          const SizedBox(height: 12),
+          Text(
+            isZh ? '正在发现资产...' : 'Discovering assets...',
+            style: AppFonts.inter(fontSize: 13, color: Colors.white70),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSecurityDiscoveryAssetCard(Asset asset, bool isZh) {
+    final stages =
+        _securityDiscoveryProgress[asset.id] ??
+        {
+          for (final stage in SecurityDiscoveryStage.values)
+            stage: _StageStatus.pending,
+        };
+    final allCompleted = stages.values.every(
+      (s) => s == _StageStatus.completed,
+    );
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: allCompleted
+            ? const Color(0xFF22C55E).withValues(alpha: 0.08)
+            : Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: allCompleted
+              ? const Color(0xFF22C55E).withValues(alpha: 0.28)
+              : Colors.white.withValues(alpha: 0.08),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                allCompleted ? LucideIcons.shieldCheck : LucideIcons.box,
+                size: 16,
+                color: allCompleted
+                    ? const Color(0xFF22C55E)
+                    : const Color(0xFF6366F1),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _formatDiscoveryAssetTitle(asset),
+                  style: AppFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: SecurityDiscoveryStage.values
+                .map(
+                  (stage) => _buildDiscoveryStagePill(
+                    stage,
+                    stages[stage] ?? _StageStatus.pending,
+                    isZh,
+                  ),
+                )
+                .toList(growable: false),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: 260.ms).slideY(begin: 0.06, end: 0);
+  }
+
+  Widget _buildDiscoveryStagePill(
+    SecurityDiscoveryStage stage,
+    _StageStatus status,
+    bool isZh,
+  ) {
+    final color = _stageAccentColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.32)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildDiscoveryStageIcon(status, color),
+          const SizedBox(width: 6),
+          Text(
+            _stageLabel(stage, isZh),
+            style: AppFonts.inter(
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildDiscoveryStageIcon(_StageStatus status, Color color) {
+    switch (status) {
+      case _StageStatus.completed:
+        return Icon(LucideIcons.checkCircle2, size: 12, color: color);
+      case _StageStatus.running:
+        return Icon(LucideIcons.loader2, size: 12, color: color)
+            .animate(onPlay: (controller) => controller.repeat())
+            .rotate(duration: 900.ms);
+      case _StageStatus.pending:
+        return Icon(LucideIcons.circleDashed, size: 12, color: color);
+    }
+  }
+
+  Color _stageAccentColor(_StageStatus status) {
+    switch (status) {
+      case _StageStatus.completed:
+        return const Color(0xFF22C55E);
+      case _StageStatus.running:
+        return const Color(0xFF6366F1);
+      case _StageStatus.pending:
+        return Colors.white60;
+    }
+  }
+
+  String _stageLabel(SecurityDiscoveryStage stage, bool isZh) {
+    switch (stage) {
+      case SecurityDiscoveryStage.baseline:
+        return isZh ? '安全基线检查' : 'Baseline Check';
+      case SecurityDiscoveryStage.vulnerability:
+        return isZh ? 'Bot 漏洞扫描' : 'Bot Vulnerability';
+      case SecurityDiscoveryStage.skillPoison:
+        return isZh ? '技能投毒检测' : 'Skill Poison';
+    }
+  }
+
+  /// 生成资产卡片标题：优先使用友好显示名，必要时追加 id 简写。
+  String _formatDiscoveryAssetTitle(Asset asset) {
+    const friendlyNames = {
+      'openclaw': 'OpenClaw',
+      'dintalclaw': 'DinTalClaw',
+      'nullclaw': 'NullClaw',
+      'qclaw': 'QClaw',
+      'hermes': 'Hermes',
+    };
+    final displayName = friendlyNames[asset.name.toLowerCase()] ?? asset.name;
+    final id = asset.id;
+    if (id.isEmpty || id == asset.name) {
+      return displayName;
+    }
+    final shortId = id.length > 10 ? '${id.substring(0, 8)}…' : id;
+    return '$displayName · $shortId';
   }
 
   Widget _buildCompletedState() {
@@ -3065,4 +3619,86 @@ class _MainPageState extends State<MainPage>
       onDeleteRiskSkill: _deleteRiskSkillFromFinding,
     );
   }
+
+  Widget _buildProbeStatusIcon(_ScanProbeStatus status) {
+    switch (status) {
+      case _ScanProbeStatus.detected:
+        return const Icon(
+          LucideIcons.checkCircle2,
+          size: 15,
+          color: Color(0xFF22C55E),
+        );
+      case _ScanProbeStatus.notDetected:
+        return const Icon(
+          LucideIcons.xCircle,
+          size: 15,
+          color: Color(0xFFEF4444),
+        );
+      case _ScanProbeStatus.scanning:
+        return const Icon(
+              LucideIcons.loader2,
+              size: 15,
+              color: Color(0xFF6366F1),
+            )
+            .animate(onPlay: (controller) => controller.repeat())
+            .rotate(duration: 900.ms);
+      case _ScanProbeStatus.pending:
+        return Icon(
+          LucideIcons.circleDashed,
+          size: 15,
+          color: Colors.white.withValues(alpha: 0.35),
+        );
+    }
+  }
+
+  Color _probeStatusColor(_ScanProbeStatus status) {
+    switch (status) {
+      case _ScanProbeStatus.detected:
+        return const Color(0xFF86EFAC);
+      case _ScanProbeStatus.notDetected:
+        return const Color(0xFFFCA5A5);
+      case _ScanProbeStatus.scanning:
+        return const Color(0xFFC4B5FD);
+      case _ScanProbeStatus.pending:
+        return Colors.white60;
+    }
+  }
+
+  Color _probeCardColor(_ScanProbeStatus status) {
+    switch (status) {
+      case _ScanProbeStatus.detected:
+        return const Color(0xFF22C55E).withValues(alpha: 0.09);
+      case _ScanProbeStatus.notDetected:
+        return const Color(0xFFEF4444).withValues(alpha: 0.08);
+      case _ScanProbeStatus.scanning:
+        return const Color(0xFF6366F1).withValues(alpha: 0.12);
+      case _ScanProbeStatus.pending:
+        return Colors.white.withValues(alpha: 0.03);
+    }
+  }
+
+  Color _probeBorderColor(_ScanProbeStatus status) {
+    switch (status) {
+      case _ScanProbeStatus.detected:
+        return const Color(0xFF22C55E).withValues(alpha: 0.22);
+      case _ScanProbeStatus.notDetected:
+        return const Color(0xFFEF4444).withValues(alpha: 0.2);
+      case _ScanProbeStatus.scanning:
+        return const Color(0xFF6366F1).withValues(alpha: 0.28);
+      case _ScanProbeStatus.pending:
+        return Colors.white.withValues(alpha: 0.06);
+    }
+  }
 }
+
+class _ScanProbe {
+  final String key;
+  final String label;
+
+  const _ScanProbe({required this.key, required this.label});
+}
+
+enum _ScanProbeStatus { pending, scanning, detected, notDetected }
+
+/// 安全发现过渡界面中单个阶段的状态
+enum _StageStatus { pending, running, completed }

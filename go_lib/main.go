@@ -74,6 +74,7 @@ import (
 	_ "go_lib/plugins/hermes"
 	_ "go_lib/plugins/nullclaw"
 	_ "go_lib/plugins/openclaw"
+	_ "go_lib/plugins/qclaw"
 )
 
 func init() {
@@ -209,11 +210,32 @@ func ScanAssetsFFI() *C.char {
 	return jsonToCString(result)
 }
 
+//export ScanAssetsByPluginFFI
+func ScanAssetsByPluginFFI(assetNameC *C.char) *C.char {
+	result, err := core.ScanAssetsByPlugin(C.GoString(assetNameC))
+	if err != nil {
+		return errorCString(err)
+	}
+	return jsonToCString(result)
+}
+
 // ==================== 风险评估 FFI ====================
 
 //export AssessRisksFFI
 func AssessRisksFFI(scannedHashesC *C.char) *C.char {
 	result, err := core.AssessAllRisksFromString(C.GoString(scannedHashesC))
+	if err != nil {
+		return errorCString(err)
+	}
+	return jsonToCString(result)
+}
+
+//export AssessRisksByPluginFFI
+func AssessRisksByPluginFFI(assetNameC, scannedHashesC *C.char) *C.char {
+	result, err := core.AssessRisksByPluginFromString(
+		C.GoString(assetNameC),
+		C.GoString(scannedHashesC),
+	)
 	if err != nil {
 		return errorCString(err)
 	}
@@ -1360,9 +1382,19 @@ func StartBatchSkillScan() *C.char {
 	return C.CString(core.StartBatchSkillScanByPlugin(""))
 }
 
+//export StartBatchSkillScanByAssetFFI
+func StartBatchSkillScanByAssetFFI(assetName *C.char) *C.char {
+	return C.CString(core.StartBatchSkillScanByPlugin(C.GoString(assetName)))
+}
+
 //export GetBatchSkillScanLog
 func GetBatchSkillScanLog(batchID *C.char) *C.char {
 	return C.CString(core.GetBatchSkillScanLogByPlugin("", C.GoString(batchID)))
+}
+
+//export GetBatchSkillScanLogByAssetFFI
+func GetBatchSkillScanLogByAssetFFI(assetName, batchID *C.char) *C.char {
+	return C.CString(core.GetBatchSkillScanLogByPlugin(C.GoString(assetName), C.GoString(batchID)))
 }
 
 //export GetBatchSkillScanResults
@@ -1370,9 +1402,19 @@ func GetBatchSkillScanResults(batchID *C.char) *C.char {
 	return C.CString(core.GetBatchSkillScanResultsByPlugin("", C.GoString(batchID)))
 }
 
+//export GetBatchSkillScanResultsByAssetFFI
+func GetBatchSkillScanResultsByAssetFFI(assetName, batchID *C.char) *C.char {
+	return C.CString(core.GetBatchSkillScanResultsByPlugin(C.GoString(assetName), C.GoString(batchID)))
+}
+
 //export CancelBatchSkillScan
 func CancelBatchSkillScan(batchID *C.char) *C.char {
 	return C.CString(core.CancelBatchSkillScanByPlugin("", C.GoString(batchID)))
+}
+
+//export CancelBatchSkillScanByAssetFFI
+func CancelBatchSkillScanByAssetFFI(assetName, batchID *C.char) *C.char {
+	return C.CString(core.CancelBatchSkillScanByPlugin(C.GoString(assetName), C.GoString(batchID)))
 }
 
 // ==================== Model Connection FFI (plugin capability dispatch) ====================
