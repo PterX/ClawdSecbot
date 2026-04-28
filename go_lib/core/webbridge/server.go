@@ -1,10 +1,12 @@
 package webbridge
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -109,18 +111,88 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if info, err := os.Stat(target); err == nil && !info.IsDir() {
+		if serveGzipStaticFile(w, r, target, info) {
+			return
+		}
 		http.ServeFile(w, r, target)
 		return
 	}
 
 	// SPA fallback.
 	indexPath := filepath.Join(root, "index.html")
-	if _, err := os.Stat(indexPath); err == nil {
+	if info, err := os.Stat(indexPath); err == nil {
+		if serveGzipStaticFile(w, r, indexPath, info) {
+			return
+		}
 		http.ServeFile(w, r, indexPath)
 		return
 	}
 
 	http.NotFound(w, r)
+}
+
+func serveGzipStaticFile(w http.ResponseWriter, r *http.Request, path string, info os.FileInfo) bool {
+	if !shouldGzipStaticFile(r, path) {
+		return false
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+
+	contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
+	if contentType == "" {
+		buffer := make([]byte, 512)
+		n, _ := file.Read(buffer)
+		contentType = http.DetectContentType(buffer[:n])
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return false
+		}
+	}
+
+	appendVaryHeader(w, "Accept-Encoding")
+	w.Header().Set("Content-Encoding", "gzip")
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Last-Modified", info.ModTime().UTC().Format(http.TimeFormat))
+
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return true
+	}
+
+	gz := gzip.NewWriter(w)
+	defer gz.Close()
+	_, _ = io.Copy(gz, file)
+	return true
+}
+
+func shouldGzipStaticFile(r *http.Request, path string) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".html", ".js", ".css", ".json", ".wasm", ".svg", ".txt", ".xml", ".map", ".ttf", ".otf", ".woff", ".woff2":
+		return true
+	default:
+		return false
+	}
+}
+
+func appendVaryHeader(w http.ResponseWriter, value string) {
+	existing := w.Header().Values("Vary")
+	for _, item := range existing {
+		for _, part := range strings.Split(item, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), value) {
+				return
+			}
+		}
+	}
+	w.Header().Add("Vary", value)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

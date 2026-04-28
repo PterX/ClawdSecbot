@@ -303,6 +303,7 @@ build_release_bundle() {
     flutter build web \
         --target lib/main_web.dart \
         --pwa-strategy=none \
+        --no-web-resources-cdn \
         --no-tree-shake-icons \
         --no-wasm-dry-run
 
