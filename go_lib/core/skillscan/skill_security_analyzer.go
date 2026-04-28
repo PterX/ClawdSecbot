@@ -303,7 +303,6 @@ func parseAgentOutput(output string, skillPath string) (*SkillAnalysisResult, er
 			Summary:   extractSummary(output),
 			RawOutput: output,
 		}
-		validateAnalysisEvidence(skillPath, result)
 		return result, nil
 	}
 
@@ -323,6 +322,10 @@ func validateAnalysisEvidence(skillPath string, result *SkillAnalysisResult) {
 
 	filtered := make([]SkillSecurityIssue, 0, len(result.Issues))
 	for _, issue := range result.Issues {
+		if isManualReviewIssue(issue) {
+			filtered = append(filtered, issue)
+			continue
+		}
 		if issueEvidenceExists(skillPath, issue) {
 			filtered = append(filtered, issue)
 			continue
@@ -363,6 +366,10 @@ func ValidateStoredIssueStrings(skillPath string, issues []string) ([]string, in
 			filtered = append(filtered, issueText)
 			continue
 		}
+		if isManualReviewIssue(issue) {
+			filtered = append(filtered, issueText)
+			continue
+		}
 		if issueEvidenceExists(skillPath, issue) {
 			filtered = append(filtered, issueText)
 			continue
@@ -373,6 +380,10 @@ func ValidateStoredIssueStrings(skillPath string, issues []string) ([]string, in
 		filtered = []string{}
 	}
 	return filtered, dropped
+}
+
+func isManualReviewIssue(issue SkillSecurityIssue) bool {
+	return strings.TrimSpace(issue.Type) == "manual_review_required"
 }
 
 func issueEvidenceExists(skillPath string, issue SkillSecurityIssue) bool {
@@ -396,11 +407,8 @@ func issueEvidenceExists(skillPath string, issue SkillSecurityIssue) bool {
 func candidateEvidenceFiles(skillPath string, issueFile string) []string {
 	var candidates []string
 	addCandidate := func(path string) {
-		if path == "" || !isPathInside(path, skillPath) {
-			return
-		}
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() || info.Size() > preAnalysisMaxFileSize {
+		info, ok := regularFileInsideSkill(path, skillPath)
+		if !ok || info.Size() > preAnalysisMaxFileSize {
 			return
 		}
 		candidates = append(candidates, path)
@@ -429,13 +437,37 @@ func candidateEvidenceFiles(skillPath string, issueFile string) []string {
 			}
 			return nil
 		}
-		if skipTransientFile(info.Name()) || info.Size() > preAnalysisMaxFileSize {
+		if skipTransientFile(info.Name()) ||
+			info.Mode()&os.ModeSymlink != 0 ||
+			info.Size() > preAnalysisMaxFileSize {
 			return nil
 		}
 		candidates = append(candidates, path)
 		return nil
 	})
 	return candidates
+}
+
+func regularFileInsideSkill(path string, root string) (os.FileInfo, bool) {
+	if path == "" || !isPathInside(path, root) {
+		return nil, false
+	}
+	info, err := os.Lstat(path)
+	if err != nil || info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, false
+	}
+	realPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, false
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, false
+	}
+	if !isPathInside(realPath, realRoot) {
+		return nil, false
+	}
+	return info, true
 }
 
 func isPathInside(path string, root string) bool {

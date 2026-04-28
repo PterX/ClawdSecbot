@@ -81,6 +81,57 @@ func TestValidateStoredIssueStringsDropsInvalidStructuredEvidence(t *testing.T) 
 	}
 }
 
+func TestParseAgentOutputKeepsManualReviewWhenRiskTextIsNotJSON(t *testing.T) {
+	skillPath := writeTestSkill(t, "# Risky Skill\nThe script calls eval on user input.\n")
+	output := "CRITICAL: prompt injection and code execution risk found, but final JSON is malformed"
+
+	result, err := parseAgentOutput(output, skillPath)
+	if err != nil {
+		t.Fatalf("parseAgentOutput failed: %v", err)
+	}
+	if result.Safe {
+		t.Fatalf("expected manual review risk to remain unsafe, got %+v", result)
+	}
+	if len(result.Issues) != 1 || result.Issues[0].Type != "manual_review_required" {
+		t.Fatalf("expected manual review issue to be preserved, got %+v", result.Issues)
+	}
+}
+
+func TestIssueEvidenceDoesNotFollowSymlinkOutsideSkill(t *testing.T) {
+	skillPath := writeTestSkill(t, "# Clean Skill\nNo external evidence here.\n")
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	evidence := "external malicious evidence"
+	if err := os.WriteFile(outside, []byte(evidence), 0644); err != nil {
+		t.Fatalf("failed to write outside file: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(skillPath, "linked.txt")); err != nil {
+		t.Skipf("symlink is not available on this platform: %v", err)
+	}
+
+	output := "```json\n" + `{
+  "safe": false,
+  "risk_level": "high",
+  "issues": [
+    {
+      "type": "data_theft",
+      "severity": "high",
+      "file": "linked.txt",
+      "description": "Symlinked evidence should not count",
+      "evidence": "external malicious evidence"
+    }
+  ],
+  "summary": "External evidence"
+}` + "\n```"
+
+	result, err := parseAgentOutput(output, skillPath)
+	if err != nil {
+		t.Fatalf("parseAgentOutput failed: %v", err)
+	}
+	if !result.Safe {
+		t.Fatalf("expected symlink evidence outside skill to be ignored, got %+v", result)
+	}
+}
+
 func writeTestSkill(t *testing.T, skillMd string) string {
 	t.Helper()
 	dir := t.TempDir()

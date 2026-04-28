@@ -174,12 +174,22 @@ func toString(v interface{}) string {
 // GetScannedSkillHashes 获取所有已扫描技能的哈希值列表
 func GetScannedSkillHashes() map[string]interface{} {
 	repo := repository.NewSkillSecurityScanRepository(nil)
-	hashes, err := repo.GetScannedSkillHashes()
+	records, err := repo.GetAllSkillScans()
 	if err != nil {
 		logging.Error("Failed to get scanned skill hashes: %v", err)
 		return errorResult(err)
 	}
 
+	hashes := make([]string, 0, len(records))
+	seen := make(map[string]bool, len(records))
+	for _, record := range records {
+		hash := strings.TrimSpace(record.SkillHash)
+		if hash == "" || seen[hash] || !isReusableScannedSkillRecord(record) {
+			continue
+		}
+		hashes = append(hashes, hash)
+		seen[hash] = true
+	}
 	return successDataResult(hashes)
 }
 
@@ -292,6 +302,22 @@ func sanitizeRiskySkillScanRecords(records []repository.SkillScanRecord) []repos
 		risky = append(risky, record)
 	}
 	return risky
+}
+
+func isReusableScannedSkillRecord(record repository.SkillScanRecord) bool {
+	if strings.EqualFold(strings.TrimSpace(record.RiskLevel), "error") {
+		return false
+	}
+	if strings.TrimSpace(record.SkillPath) == "" ||
+		strings.TrimSpace(record.SourcePlugin) == "" ||
+		strings.TrimSpace(record.DeletedAt) != "" {
+		return false
+	}
+	if record.Safe || len(record.Issues) == 0 {
+		return true
+	}
+	filteredIssues, _ := skillscan.ValidateStoredIssueStrings(record.SkillPath, record.Issues)
+	return len(filteredIssues) > 0
 }
 
 // TrustSkill marks a skill as trusted (user accepts known risks)

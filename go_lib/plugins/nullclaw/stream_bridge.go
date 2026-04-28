@@ -551,7 +551,7 @@ func (bs *BatchScanSession) run(config *repository.SecurityModelConfig) {
 		var riskLevel string
 		if result != nil {
 			for _, issue := range result.Issues {
-				issues = append(issues, fmt.Sprintf("%s: %s", issue.Type, issue.Description))
+				issues = append(issues, SerializeSkillIssue(issue))
 			}
 			riskLevel = result.RiskLevel
 		}
