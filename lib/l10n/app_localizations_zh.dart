@@ -615,6 +615,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get modelConfigSaving => '保存中...';
 
   @override
+  String get modelConfigVerifyingConnectionTitle => '正在验证连通性';
+
+  @override
+  String get modelConfigVerifyingConnectionMessage => '正在验证模型连通性，请稍候...';
+
+  @override
+  String get modelConfigSlowResponseHint => '当前响应较慢，可能影响使用哦';
+
+  @override
   String modelConfigTestFailed(String error) {
     return '连接测试失败: $error';
   }
@@ -1176,6 +1185,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get totalTokens => 'Token总量';
+
+  @override
+  String get totalTokenTooltip => '此部分为AI Bot自身产生的Token消耗，不包含安全防护分析部分';
 
   @override
   String get promptTokens => '输入Token';

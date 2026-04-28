@@ -633,6 +633,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get modelConfigSaving => 'Saving...';
 
   @override
+  String get modelConfigVerifyingConnectionTitle => 'Validating connectivity';
+
+  @override
+  String get modelConfigVerifyingConnectionMessage =>
+      'Validating model connectivity, please wait...';
+
+  @override
+  String get modelConfigSlowResponseHint =>
+      'Current response is slow and may impact usage.';
+
+  @override
   String modelConfigTestFailed(String error) {
     return 'Connection test failed: $error';
   }
@@ -1208,6 +1219,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get totalTokens => 'Total Tokens';
+
+  @override
+  String get totalTokenTooltip =>
+      'Token consumption from the AI Bot itself (excludes security protection analysis)';
 
   @override
   String get promptTokens => 'Prompt Tokens';

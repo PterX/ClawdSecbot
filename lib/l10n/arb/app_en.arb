@@ -288,6 +288,9 @@
   "modelConfigValidateConnection": "Validate Connectivity",
   "modelConfigTestSuccess": "Connectivity validation succeeded",
   "modelConfigSaving": "Saving...",
+  "modelConfigVerifyingConnectionTitle": "Validating connectivity",
+  "modelConfigVerifyingConnectionMessage": "Validating model connectivity, please wait...",
+  "modelConfigSlowResponseHint": "Current response is slow and may impact usage.",
   "modelConfigTestFailed": "Connection test failed: {error}",
   "@modelConfigTestFailed": {
     "placeholders": {
@@ -759,6 +762,7 @@
   },
 
   "totalTokens": "Total Tokens",
+  "totalTokenTooltip": "Token consumption from the AI Bot itself (excludes security protection analysis)",
   "promptTokens": "Prompt Tokens",
   "completionTokens": "Completion Tokens",
   "toolCallCount": "Tool Calls",

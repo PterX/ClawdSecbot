@@ -1194,6 +1194,24 @@ abstract class AppLocalizations {
   /// **'保存中...'**
   String get modelConfigSaving;
 
+  /// No description provided for @modelConfigVerifyingConnectionTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在验证连通性'**
+  String get modelConfigVerifyingConnectionTitle;
+
+  /// No description provided for @modelConfigVerifyingConnectionMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在验证模型连通性，请稍候...'**
+  String get modelConfigVerifyingConnectionMessage;
+
+  /// No description provided for @modelConfigSlowResponseHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前响应较慢，可能影响使用哦'**
+  String get modelConfigSlowResponseHint;
+
   /// No description provided for @modelConfigTestFailed.
   ///
   /// In zh, this message translates to:
@@ -2061,6 +2079,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'Token总量'**
   String get totalTokens;
+
+  /// No description provided for @totalTokenTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'此部分为AI Bot自身产生的Token消耗，不包含安全防护分析部分'**
+  String get totalTokenTooltip;
 
   /// No description provided for @promptTokens.
   ///
