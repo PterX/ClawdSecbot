@@ -77,9 +77,6 @@ func TestWebAuthChangePasswordInvalidatesSessions(t *testing.T) {
 
 func initTestDB(t *testing.T) {
 	t.Helper()
-	t.Cleanup(func() {
-		_ = repository.CloseDB()
-	})
 	tmp := t.TempDir()
 	if _, err := repository.InitDBWithVersion(
 		filepath.Join(tmp, "botsec.db"),
@@ -88,4 +85,7 @@ func initTestDB(t *testing.T) {
 	); err != nil {
 		t.Fatalf("InitDBWithVersion failed: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = repository.CloseDB()
+	})
 }
