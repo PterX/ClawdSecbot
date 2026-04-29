@@ -115,7 +115,7 @@ func TestCheckUserInputParseErrorCarriesUsage(t *testing.T) {
 		t.Fatalf("expected nil decision on parse error, got=%+v", decision)
 	}
 	got := UsageFromError(err)
-	if got == nil || got.PromptTokens != 31 || got.CompletionTokens != 7 || got.TotalTokens != 38 {
-		t.Fatalf("expected response usage to be carried by parse error, got=%+v", got)
+	if got == nil || got.TotalTokens == 0 || got.PromptTokens == 0 {
+		t.Fatalf("expected ReAct parse error to carry analysis usage, got=%+v", got)
 	}
 }

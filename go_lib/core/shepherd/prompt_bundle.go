@@ -9,9 +9,8 @@ import (
 var bundledPromptsFS embed.FS
 
 var (
-	userInputSystemPromptTemplate                  = mustReadBundledPrompt("bundled_prompts/user_input_system.md")
-	toolCallGuardSystemPromptTemplate              = mustReadBundledPrompt("bundled_prompts/tool_call_guard_system.md")
-	toolResultResponsibilityMismatchPromptTemplate = mustReadBundledPrompt("bundled_prompts/tool_result_responsibility_mismatch_system.md")
+	userInputSystemPromptTemplate     = mustReadBundledPrompt("bundled_prompts/user_input_system.md")
+	toolCallGuardSystemPromptTemplate = mustReadBundledPrompt("bundled_prompts/tool_call_guard_system.md")
 )
 
 func mustReadBundledPrompt(path string) string {

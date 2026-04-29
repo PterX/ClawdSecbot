@@ -71,7 +71,7 @@ func (d *llmAgentSecurityDetector) Detect(ctx context.Context, req securityDetec
 	}
 	switch req.Stage {
 	case hookStageUserInput:
-		decision, err := d.gate.CheckUserInput(ctx, req.UserInput)
+		decision, err := d.gate.CheckUserInput(ctx, req.UserInput, req.RequestID)
 		return detectionResponseFromShepherdDecision(decision), err
 	case hookStageToolCall, hookStageToolCallResult:
 		decision, err := d.gate.CheckToolCall(ctx, req.ToolCalls, req.ToolResults, req.RequestID)

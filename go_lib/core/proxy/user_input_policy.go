@@ -195,21 +195,46 @@ func isInjectedUserContext(content string) bool {
 	if content == "" {
 		return false
 	}
+	normalized := strings.ToLower(content)
 	markers := []string{
-		"User's conversation history (from memory system)",
-		"IMPORTANT: The following are facts from previous conversations with this user.",
-		"Available follow-up tools:",
-		"task_summary(taskId=",
-		"memory_timeline(chunkId=",
+		"user's conversation history (from memory system)",
+		"important: the following are facts from previous conversations with this user.",
+		"available follow-up tools:",
+		"task_summary(taskid=",
+		"memory_timeline(chunkid=",
 		"call memory_search with a shorter or rephrased query",
+		"must call memory_search",
+		"quoted_notes",
+		"end_quoted_notes",
 	}
 	hits := 0
 	for _, marker := range markers {
-		if strings.Contains(content, marker) {
+		if strings.Contains(normalized, marker) {
 			hits++
 		}
 	}
-	return hits >= 2
+	if hits >= 2 {
+		return true
+	}
+	if !strings.Contains(normalized, "memory system") {
+		return false
+	}
+	recallMarkers := []string{
+		"memory_search",
+		"previous conversations",
+		"conversation history",
+		"quoted_notes",
+		"end_quoted_notes",
+		"follow-up tools",
+		"task_summary(",
+		"memory_timeline(",
+	}
+	for _, marker := range recallMarkers {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (pp *ProxyProtection) runUserInputPolicyHooks(ctx context.Context, policyCtx userInputPolicyContext) userInputPolicyResult {
