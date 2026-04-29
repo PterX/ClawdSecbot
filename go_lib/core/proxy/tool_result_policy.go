@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -85,7 +86,7 @@ func toolResultContentByToolCallID(toolResults map[string]string, toolCallID str
 }
 
 func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtection, policyCtx toolResultPolicyContext) toolResultPolicyResult {
-	if !policyCtx.HasToolResultMessages || pp.shepherdGate == nil {
+	if !policyCtx.HasToolResultMessages || pp == nil {
 		return toolResultPolicyResult{}
 	}
 
@@ -305,7 +306,10 @@ func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProte
 	pp.markBlockedToolCallIDsForRequest(policyCtx.RequestID, toolCallIDs)
 	pp.storePendingToolCallRecoveryWithRiskForRequest(policyCtx.RequestID, nil, toolCallIDs, "", decision.Reason, "tool_result", decision.RiskType)
 
-	securityMsg := pp.shepherdGate.FormatSecurityMockReply(decision)
+	securityMsg := fmt.Sprintf("[ShepherdGate] Status: %s | Reason: %s", decision.Status, decision.Reason)
+	if pp.shepherdGate != nil {
+		securityMsg = pp.shepherdGate.FormatSecurityMockReply(decision)
+	}
 	pp.emitMonitorSecurityDecision(decision.Status, decision.Reason, true, securityMsg)
 	recordAction := "BLOCK"
 	recordRiskLevel := "BLOCKED"

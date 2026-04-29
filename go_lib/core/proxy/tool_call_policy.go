@@ -11,8 +11,9 @@ import (
 )
 
 type toolCallPolicyContext struct {
-	RequestID string
-	ToolCalls []openai.ChatCompletionMessageToolCall
+	RequestID     string
+	ToolCalls     []openai.ChatCompletionMessageToolCall
+	ToolCallInfos []ToolCallInfo
 }
 
 type toolCallPolicyResult struct {
@@ -33,12 +34,18 @@ func (shepherdToolCallPolicyHook) Name() string {
 }
 
 func (shepherdToolCallPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtection, policyCtx toolCallPolicyContext) toolCallPolicyResult {
-	if len(policyCtx.ToolCalls) == 0 || pp == nil || pp.shepherdGate == nil {
+	if (len(policyCtx.ToolCalls) == 0 && len(policyCtx.ToolCallInfos) == 0) || pp == nil {
 		return toolCallPolicyResult{}
 	}
-	pp.sendSecurityFlowLog(securityFlowStageToolCall, "analysis_start: tool_call_count=%d", len(policyCtx.ToolCalls))
+	pp.sendSecurityFlowLog(securityFlowStageToolCall, "analysis_start: tool_call_count=%d", len(policyCtx.ToolCalls)+len(policyCtx.ToolCallInfos))
 
-	toolCallInfos := make([]ToolCallInfo, 0, len(policyCtx.ToolCalls))
+	toolCallInfos := make([]ToolCallInfo, 0, len(policyCtx.ToolCallInfos)+len(policyCtx.ToolCalls))
+	for _, info := range policyCtx.ToolCallInfos {
+		if pp.toolValidator != nil {
+			info.IsSensitive = pp.toolValidator.IsSensitive(info.Name)
+		}
+		toolCallInfos = append(toolCallInfos, info)
+	}
 	for _, tc := range policyCtx.ToolCalls {
 		info := ToolCallInfo{
 			Name:       tc.Function.Name,

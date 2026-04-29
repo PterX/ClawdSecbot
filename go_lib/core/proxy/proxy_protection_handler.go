@@ -310,6 +310,32 @@ func (pp *ProxyProtection) onResponse(ctx context.Context, resp *openai.ChatComp
 	var outputContent string
 	var generatedToolCalls []openai.ChatCompletionMessageToolCall
 	streamBuffer := pp.streamBufferForRequest(requestID)
+	rawToolPayload := extractRawResponseToolPayload(resp.RawJSON())
+	if len(rawToolPayload.Calls) > 0 {
+		pp.sendSecurityFlowLog(securityFlowStageToolCall, "raw_response tool_call_count=%d", len(rawToolPayload.Calls))
+		toolCallPolicyResult := pp.runToolCallPolicyHooks(ctx, toolCallPolicyContext{
+			RequestID:     requestID,
+			ToolCallInfos: rawToolPayload.Calls,
+		})
+		if toolCallPolicyResult.Handled && toolCallPolicyResult.Decision != nil {
+			return pp.applyResponseSecurityPolicyDecision(ctx, requestID, *toolCallPolicyResult.Decision, false)
+		}
+		pp.metricsMu.Lock()
+		pp.totalToolCalls += len(rawToolPayload.Calls)
+		pp.metricsMu.Unlock()
+		pp.sendMetricsToCallback()
+	}
+	if len(rawToolPayload.Results) > 0 {
+		toolResultPolicyResult := pp.runToolResultPolicyHooks(ctx, toolResultPolicyContext{
+			RequestID:                requestID,
+			HasToolResultMessages:    true,
+			LatestAssistantToolCalls: toolCallRefsFromInfos(rawToolPayload.Calls),
+			ToolResultsMap:           toolResultMapFromInfos(rawToolPayload.Results),
+		})
+		if toolResultPolicyResult.Handled {
+			return toolResultPolicyResult.Pass
+		}
+	}
 
 	if len(resp.Choices) > 0 {
 		msg := &resp.Choices[0].Message
