@@ -1256,6 +1256,22 @@ class AppLocalizationsEn extends AppLocalizations {
       'Token consumption from security analysis (not included in main business flow)';
 
   @override
+  String get analysisCountTooltip =>
+      'Times the security model analyzed tool calls / tool results; ordinary chat does not trigger analysis';
+
+  @override
+  String get messageCountTooltip =>
+      'Requests successfully forwarded to the upstream Bot; daily-token-quota rejections are excluded';
+
+  @override
+  String get warningCountTooltip =>
+      'NEEDS_CONFIRMATION decisions: not blocked, user is asked to confirm the risk';
+
+  @override
+  String get blockedCountTooltip =>
+      'BLOCK decisions: request is rejected outright and never reaches the upstream Bot';
+
+  @override
   String get protectionConfigTitle => 'Protection Config';
 
   @override

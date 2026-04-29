@@ -44,6 +44,7 @@ class ProtectionMonitorCharts {
             analysisCount.toString(),
             LucideIcons.scan,
             const Color(0xFF6366F1),
+            tooltip: l10n.analysisCountTooltip,
           ),
         ),
         const SizedBox(width: 12),
@@ -53,6 +54,7 @@ class ProtectionMonitorCharts {
             messageCount.toString(),
             LucideIcons.messageSquare,
             const Color(0xFF8B5CF6),
+            tooltip: l10n.messageCountTooltip,
           ),
         ),
         const SizedBox(width: 12),
@@ -62,6 +64,7 @@ class ProtectionMonitorCharts {
             warningCount.toString(),
             LucideIcons.alertTriangle,
             const Color(0xFFF59E0B),
+            tooltip: l10n.warningCountTooltip,
           ),
         ),
         const SizedBox(width: 12),
@@ -73,6 +76,7 @@ class ProtectionMonitorCharts {
             blockedCount > 0
                 ? const Color(0xFFEF4444)
                 : const Color(0xFF22C55E),
+            tooltip: l10n.blockedCountTooltip,
           ),
         ),
       ],

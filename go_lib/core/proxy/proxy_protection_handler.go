@@ -780,13 +780,20 @@ func (pp *ProxyProtection) onRequest(ctx context.Context, req *openai.ChatComple
 						}
 						applyRecordPrimaryContent(r, RecordContentSecurity, securityMsg, true)
 					})
+					// 按 ShepherdGate 决策语义区分计数：
+					//   BLOCK              → 已硬性阻断，记入 blockedCount（拦截次数）
+					//   NEEDS_CONFIRMATION → 仅提示用户确认，未阻断，记入 warningCount（告警次数）
+					// 二者互斥，避免“拦截次数”与“告警次数”始终相等导致用户无法区分。
 					pp.statsMu.Lock()
-					pp.blockedCount++
-					pp.warningCount++
+					if decision.Status == "NEEDS_CONFIRMATION" {
+						pp.warningCount++
+					} else {
+						pp.blockedCount++
+					}
 					pp.statsMu.Unlock()
 					pp.sendMetricsToCallback()
-					// Co-locate the SecurityEvent write with blockedCount++ so the UI
-					// "intercept count" and "event list" stay monotonically consistent.
+					// Co-locate the SecurityEvent write with the counter increment so the UI
+					// statistics and the event list stay monotonically consistent.
 					shepherdActionDesc := strings.TrimSpace(decision.ActionDesc)
 					if shepherdActionDesc == "" {
 						shepherdActionDesc = decision.Reason

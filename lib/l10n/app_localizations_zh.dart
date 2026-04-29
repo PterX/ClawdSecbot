@@ -1220,6 +1220,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get analysisTokenTooltip => '此部分为安全防护分析产生的Token消耗，不计入主要业务流程';
 
   @override
+  String get analysisCountTooltip => '安全模型对工具调用 / 工具结果的分析次数；普通对话不触发';
+
+  @override
+  String get messageCountTooltip => '代理成功转发到上游 Bot 的请求数；被每日 Token 配额拦截的不计入';
+
+  @override
+  String get warningCountTooltip => '需用户确认（NEEDS_CONFIRMATION）的次数：未阻断，仅提示风险';
+
+  @override
+  String get blockedCountTooltip => '已阻断（BLOCK）的次数：请求被直接拒绝，未到达上游 Bot';
+
+  @override
   String get protectionConfigTitle => '防护配置';
 
   @override

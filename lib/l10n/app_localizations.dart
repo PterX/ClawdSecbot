@@ -2146,6 +2146,30 @@ abstract class AppLocalizations {
   /// **'此部分为安全防护分析产生的Token消耗，不计入主要业务流程'**
   String get analysisTokenTooltip;
 
+  /// No description provided for @analysisCountTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'安全模型对工具调用 / 工具结果的分析次数；普通对话不触发'**
+  String get analysisCountTooltip;
+
+  /// No description provided for @messageCountTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'代理成功转发到上游 Bot 的请求数；被每日 Token 配额拦截的不计入'**
+  String get messageCountTooltip;
+
+  /// No description provided for @warningCountTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'需用户确认（NEEDS_CONFIRMATION）的次数：未阻断，仅提示风险'**
+  String get warningCountTooltip;
+
+  /// No description provided for @blockedCountTooltip.
+  ///
+  /// In zh, this message translates to:
+  /// **'已阻断（BLOCK）的次数：请求被直接拒绝，未到达上游 Bot'**
+  String get blockedCountTooltip;
+
   /// No description provided for @protectionConfigTitle.
   ///
   /// In zh, this message translates to:
