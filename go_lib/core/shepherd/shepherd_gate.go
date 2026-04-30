@@ -474,6 +474,77 @@ func (sg *ShepherdGate) CheckUserInput(ctx context.Context, userInput string, re
 	}, nil
 }
 
+// CheckFinalResult asks the security model to classify final assistant output
+// before it is returned to the user.
+func (sg *ShepherdGate) CheckFinalResult(ctx context.Context, finalContent string, requestID ...string) (*ShepherdDecision, error) {
+	finalContent = strings.TrimSpace(finalContent)
+	if finalContent == "" {
+		allowed := true
+		return &ShepherdDecision{Status: "ALLOWED", Allowed: &allowed, Reason: "Empty final output."}, nil
+	}
+
+	sg.mu.RLock()
+	reactAnalyzer := sg.reactAnalyzer
+	chatModel := sg.chatModel
+	modelConfig := sg.modelConfig
+	reactSkillCfg := sg.reactSkillCfg
+	rules := cloneUserRules(sg.userRules)
+	sg.mu.RUnlock()
+	lang := sg.getEffectiveLanguage()
+
+	if reactAnalyzer == nil {
+		if chatModel == nil {
+			allowed := true
+			return &ShepherdDecision{Status: "ALLOWED", Allowed: &allowed, Reason: "Security model is not configured for final output analysis."}, nil
+		}
+		analyzer, err := NewToolCallReActAnalyzerWithConfig(ctx, chatModel, lang, modelConfig, &reactSkillCfg)
+		if err != nil {
+			return nil, fmt.Errorf("initialize ReAct analyzer failed: %w", err)
+		}
+		sg.mu.Lock()
+		if sg.reactAnalyzer == nil {
+			sg.reactAnalyzer = analyzer
+			reactAnalyzer = analyzer
+		} else {
+			analyzer.Close()
+			reactAnalyzer = sg.reactAnalyzer
+		}
+		sg.mu.Unlock()
+	}
+
+	reactAnalyzer.SetLanguage(lang)
+	reqID := ""
+	if len(requestID) > 0 {
+		reqID = requestID[0]
+	}
+	reactDecision, reactErr := reactAnalyzer.AnalyzeFinalResult(ctx, finalContent, rules, reqID)
+	if reactErr != nil {
+		logging.ShepherdGateError("%s[final_result][CheckFinalResult][-] ReAct analyzer failed: %v action=fail_open", shepherdFlowLogPrefix, reactErr)
+		allowed := true
+		return &ShepherdDecision{
+			Status:  "ALLOWED",
+			Allowed: &allowed,
+			Reason:  fmt.Sprintf("Security check bypassed due to ReAct error: %v", reactErr),
+			Usage:   UsageFromError(reactErr),
+		}, nil
+	}
+	allowed := reactDecision.Allowed
+	status := "ALLOWED"
+	if !allowed {
+		status = "NEEDS_CONFIRMATION"
+	}
+	logging.ShepherdGateInfo("%s[final_result][CheckFinalResult][-] result: status=%s skill=%s risk_type=%s confidence=%d", shepherdFlowLogPrefix, status, reactDecision.Skill, reactDecision.RiskType, reactDecision.Confidence)
+	return &ShepherdDecision{
+		Status:     status,
+		Allowed:    &allowed,
+		Reason:     reactDecision.Reason,
+		ActionDesc: reactDecision.ActionDesc,
+		RiskType:   reactDecision.RiskType,
+		Skill:      reactDecision.Skill,
+		Usage:      reactDecision.Usage,
+	}, nil
+}
+
 // CheckToolCall performs the security check
 func (sg *ShepherdGate) CheckToolCall(ctx context.Context, toolCalls []ToolCallInfo, toolResults []ToolResultInfo, requestID ...string) (*ShepherdDecision, error) {
 	sg.mu.RLock()

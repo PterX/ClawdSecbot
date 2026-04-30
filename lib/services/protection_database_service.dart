@@ -81,6 +81,7 @@ class ProtectionDatabaseService {
         'asset_id': config.assetID,
         'enabled': config.enabled,
         'audit_only': config.auditOnly,
+        'user_input_detection_enabled': config.userInputDetectionEnabled,
         'sandbox_enabled': config.sandboxEnabled,
         'gateway_binary_path': config.gatewayBinaryPath ?? '',
         'gateway_config_path': config.gatewayConfigPath ?? '',
@@ -369,6 +370,10 @@ class ProtectionDatabaseService {
       assetID: map['asset_id'] as String? ?? '',
       enabled: map['enabled'] as bool? ?? false,
       auditOnly: map['audit_only'] as bool? ?? false,
+      userInputDetectionEnabled:
+          map['user_input_detection_enabled'] == null ||
+          map['user_input_detection_enabled'] == true ||
+          map['user_input_detection_enabled'] == 1,
       sandboxEnabled: map['sandbox_enabled'] as bool? ?? false,
       gatewayBinaryPath: map['gateway_binary_path'] as String?,
       gatewayConfigPath: map['gateway_config_path'] as String?,

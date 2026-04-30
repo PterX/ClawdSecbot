@@ -522,7 +522,9 @@ func (t *AuditChainTracker) touchStateLocked(state *auditLogState, now time.Time
 	state.UpdatedAt = now
 	state.SortCursor++
 	state.Log.PersistSeq = state.SortCursor
-	state.Log.TotalTokens = state.Log.PromptTokens + state.Log.CompletionTokens
+	if state.Log.TotalTokens <= 0 {
+		state.Log.TotalTokens = state.Log.PromptTokens + state.Log.CompletionTokens
+	}
 	withResult, total := summarizeAuditToolResultProgress(state.Log.ToolCalls)
 	logging.Info(
 		"[AuditChain] snapshot queued: log_id=%s seq=%d tool_results=%d/%d output_len=%d tokens=%d",
@@ -925,7 +927,7 @@ func (t *AuditChainTracker) RecordToolResults(assetID string, toolResults map[st
 }
 
 // UpdateRequestTokens updates token counters for the log bound to requestID.
-func (t *AuditChainTracker) UpdateRequestTokens(requestID string, promptTokens, completionTokens int) {
+func (t *AuditChainTracker) UpdateRequestTokens(requestID string, promptTokens, completionTokens, totalTokens int) {
 	if t == nil {
 		return
 	}
@@ -940,6 +942,7 @@ func (t *AuditChainTracker) UpdateRequestTokens(requestID string, promptTokens, 
 	}
 	state.Log.PromptTokens = promptTokens
 	state.Log.CompletionTokens = completionTokens
+	state.Log.TotalTokens = totalTokens
 	t.touchStateLocked(state, now)
 }
 

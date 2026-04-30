@@ -38,6 +38,11 @@ func (shepherdToolCallPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtect
 		return toolCallPolicyResult{}
 	}
 	pp.sendSecurityFlowLog(securityFlowStageToolCall, "analysis_start: tool_call_count=%d", len(policyCtx.ToolCalls)+len(policyCtx.ToolCallInfos))
+	if pp.isAuditOnlyMode() {
+		logSecurityFlowInfo(securityFlowStageToolCall, "audit_only=true; skipping ShepherdGate analysis")
+		pp.sendSecurityFlowLog(securityFlowStageToolCall, "audit_only=true; allowing tool calls without blocking")
+		return toolCallPolicyResult{}
+	}
 
 	toolCallInfos := make([]ToolCallInfo, 0, len(policyCtx.ToolCallInfos)+len(policyCtx.ToolCalls))
 	for _, info := range policyCtx.ToolCallInfos {
@@ -170,83 +175,6 @@ func securityPolicyDecisionFromToolCallLLM(decision *shepherd.ShepherdDecision, 
 		ToolCallID:      toolCallID,
 		EvidenceSummary: truncateString(redactSecurityEvidence(strings.Join(evidenceParts, "\n")), 240),
 	}
-}
-
-func normalizeRuleAction(action string) string {
-	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "block", "blocked":
-		return decisionActionBlock
-	case "allow", "allowed":
-		return decisionActionAllow
-	case "redact":
-		return decisionActionRedact
-	default:
-		return decisionActionNeedsConfirm
-	}
-}
-
-type shepherdRuleView struct {
-	Description string
-	Action      string
-	RiskType    string
-}
-
-func semanticRuleMatchesText(rule, text string) bool {
-	rule = strings.TrimSpace(rule)
-	text = strings.TrimSpace(text)
-	if rule == "" || text == "" {
-		return false
-	}
-	if !strings.Contains(rule, "*") {
-		if strings.Contains(text, rule) {
-			return true
-		}
-		return semanticRuleKeywordMatches(rule, text)
-	}
-	parts := strings.Split(rule, "*")
-	cursor := 0
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		idx := strings.Index(text[cursor:], part)
-		if idx < 0 {
-			return false
-		}
-		cursor += idx + len(part)
-	}
-	return true
-}
-
-func semanticRuleKeywordMatches(rule, text string) bool {
-	switch {
-	case strings.Contains(rule, "删除") || strings.Contains(rule, "delete") || strings.Contains(rule, "remove"):
-		return strings.Contains(text, "删除") || strings.Contains(text, "delete") || strings.Contains(text, "remove")
-	case strings.Contains(rule, "邮件") || strings.Contains(rule, "mail") || strings.Contains(rule, "email"):
-		return strings.Contains(text, "邮件") || strings.Contains(text, "mail") || strings.Contains(text, "email")
-	case strings.Contains(rule, "ssh") || strings.Contains(rule, "key") || strings.Contains(rule, "密钥"):
-		return strings.Contains(text, "ssh") || strings.Contains(text, "key") || strings.Contains(text, "密钥")
-	case strings.Contains(rule, "cookie"):
-		return strings.Contains(text, "cookie")
-	case strings.Contains(rule, "配置") || strings.Contains(rule, "config"):
-		return strings.Contains(text, "配置") || strings.Contains(text, "config")
-	default:
-		return false
-	}
-}
-
-func semanticRuleAppliesTo(appliesTo []string, stage string) bool {
-	if len(appliesTo) == 0 {
-		return true
-	}
-	stage = strings.ToLower(strings.TrimSpace(stage))
-	for _, item := range appliesTo {
-		if strings.ToLower(strings.TrimSpace(item)) == stage {
-			return true
-		}
-	}
-	return false
 }
 
 func (pp *ProxyProtection) runToolCallPolicyHooks(ctx context.Context, policyCtx toolCallPolicyContext) toolCallPolicyResult {

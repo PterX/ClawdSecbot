@@ -48,13 +48,18 @@ var (
 		{regexp.MustCompile(`AKIA[0-9A-Z]{16}`), "AWS access key"},
 		{regexp.MustCompile(`(?i)(api[_-]?key|token|secret|password)\s*[:=]\s*['"]?[A-Za-z0-9_./+=-]{12,}`), "credential-like assignment"},
 	}
-	finalResultDangerousAdvicePattern = regexp.MustCompile(`(?i)(rm\s+-[^\s]*r[^\s]*f\s+/|curl\s+[^|]{0,120}\|\s*(sh|bash)|wget\s+[^|]{0,120}\|\s*(sh|bash)|chmod\s+777\s+/|/etc/shadow|launchctl\s+load|crontab\s+.*\*)`)
-	finalResultTrustExploitPattern    = regexp.MustCompile(`(?i)(click|press|choose|approve|confirm).{0,80}(without reviewing|safe to ignore|security warning|permission warning|直接确认|不用看|忽略.*警告|批准.*权限)`)
 )
 
 func (detectorFinalResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtection, policyCtx finalResultPolicyContext) finalResultPolicyResult {
 	content := strings.TrimSpace(policyCtx.Content)
 	if content == "" || pp == nil {
+		return finalResultPolicyResult{}
+	}
+	if policyCtx.Stream {
+		return finalResultPolicyResult{}
+	}
+	if pp.isAuditOnlyMode() {
+		logSecurityFlowInfo(securityFlowStageFinalResult, "audit_only=true; skipping final result detector analysis")
 		return finalResultPolicyResult{}
 	}
 	detector := pp.currentSecurityDetector()
@@ -112,6 +117,13 @@ func (ruleFinalResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtecti
 	if !policyCtx.Stream {
 		pp.sendSecurityFlowLog(securityFlowStageFinalResult, "analysis_start: stream=%v content_chars=%d", policyCtx.Stream, len(content))
 	}
+	if pp != nil && pp.isAuditOnlyMode() {
+		logSecurityFlowInfo(securityFlowStageFinalResult, "audit_only=true; skipping final result analysis")
+		if !policyCtx.Stream {
+			pp.sendSecurityFlowLog(securityFlowStageFinalResult, "audit_only=true; allowing final result without blocking")
+		}
+		return finalResultPolicyResult{}
+	}
 
 	if strings.Contains(content, blockedToolResultPlaceholder) ||
 		strings.Contains(content, "Tool result was blocked and withheld due to security risk") {
@@ -124,61 +136,6 @@ func (ruleFinalResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtecti
 			RiskLevel:       riskLevelHigh,
 			HookStage:       hookStageFinalResult,
 			EvidenceSummary: truncateString(redactSecurityEvidence(content), 160),
-		}
-		pp.sendSecurityFlowLog(securityFlowStageFinalResult, "decision: action=%s risk_type=%s reason=%s", decision.normalizedAction(), decision.RiskType, decision.Reason)
-		return finalResultPolicyResult{Decision: decision, Handled: true, Pass: false}
-	}
-
-	if pp != nil && pp.shepherdGate != nil {
-		if matched, rule := matchesFinalResultSemanticRule(content, pp.shepherdGate.GetUserRules()); matched {
-			action := normalizeRuleAction(rule.Action)
-			if action == decisionActionAllow {
-				return finalResultPolicyResult{}
-			}
-			riskType := strings.TrimSpace(rule.RiskType)
-			if riskType == "" {
-				riskType = riskHighRiskOperation
-			}
-			decision := &securityPolicyDecision{
-				Status:          action,
-				Action:          action,
-				ActionDesc:      "Final result matches user-defined semantic rule",
-				Reason:          fmt.Sprintf("Final answer matches user-defined rule: %s", rule.Description),
-				RiskType:        riskType,
-				RiskLevel:       riskLevelHigh,
-				HookStage:       hookStageFinalResult,
-				EvidenceSummary: truncateString(rule.Description, 160),
-			}
-			pp.sendSecurityFlowLog(securityFlowStageFinalResult, "decision: action=%s risk_type=%s reason=%s", decision.normalizedAction(), decision.RiskType, decision.Reason)
-			return finalResultPolicyResult{Decision: decision, Handled: true, Pass: false}
-		}
-	}
-
-	if evidence := finalResultDangerousAdvicePattern.FindString(content); strings.TrimSpace(evidence) != "" {
-		decision := &securityPolicyDecision{
-			Status:          decisionActionBlock,
-			Action:          decisionActionBlock,
-			ActionDesc:      "Final result contains dangerous operation guidance",
-			Reason:          "Final answer contains high-risk destructive, persistence, or external execution guidance.",
-			RiskType:        riskHighRiskOperation,
-			RiskLevel:       riskLevelHigh,
-			HookStage:       hookStageFinalResult,
-			EvidenceSummary: truncateString(redactSecurityEvidence(evidence), 160),
-		}
-		pp.sendSecurityFlowLog(securityFlowStageFinalResult, "decision: action=%s risk_type=%s reason=%s", decision.normalizedAction(), decision.RiskType, decision.Reason)
-		return finalResultPolicyResult{Decision: decision, Handled: true, Pass: false}
-	}
-
-	if evidence := finalResultTrustExploitPattern.FindString(content); strings.TrimSpace(evidence) != "" {
-		decision := &securityPolicyDecision{
-			Status:          decisionActionBlock,
-			Action:          decisionActionBlock,
-			ActionDesc:      "Final result may induce unsafe user confirmation",
-			Reason:          "Final answer appears to encourage approving or ignoring a security warning.",
-			RiskType:        riskHumanTrustExploitation,
-			RiskLevel:       riskLevelHigh,
-			HookStage:       hookStageFinalResult,
-			EvidenceSummary: truncateString(redactSecurityEvidence(evidence), 160),
 		}
 		pp.sendSecurityFlowLog(securityFlowStageFinalResult, "decision: action=%s risk_type=%s reason=%s", decision.normalizedAction(), decision.RiskType, decision.Reason)
 		return finalResultPolicyResult{Decision: decision, Handled: true, Pass: false}
@@ -212,30 +169,6 @@ func (ruleFinalResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtecti
 		pp.sendSecurityFlowLog(securityFlowStageFinalResult, "decision: action=ALLOW stream=%v", policyCtx.Stream)
 	}
 	return finalResultPolicyResult{}
-}
-
-func matchesFinalResultSemanticRule(content string, rules *UserRules) (bool, shepherdRuleView) {
-	if rules == nil {
-		return false, shepherdRuleView{}
-	}
-	text := strings.ToLower(content)
-	for _, rule := range rules.SemanticRules {
-		if !rule.Enabled || !semanticRuleAppliesTo(rule.AppliesTo, hookStageFinalResult) {
-			continue
-		}
-		ruleText := strings.ToLower(strings.TrimSpace(rule.ID + " " + rule.Description))
-		if ruleText == "" {
-			continue
-		}
-		if semanticRuleMatchesText(ruleText, text) {
-			return true, shepherdRuleView{
-				Description: rule.Description,
-				Action:      rule.Action,
-				RiskType:    rule.RiskType,
-			}
-		}
-	}
-	return false, shepherdRuleView{}
 }
 
 func redactFinalResultSecrets(content string) (string, []string, string) {

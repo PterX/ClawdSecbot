@@ -277,9 +277,10 @@ func buildPolicyProxyConfigForSync(config *repository.ProtectionConfig) (*proxy.
 			SecretKey: config.BotModelConfig.SecretKey,
 		},
 		Runtime: &proxy.ProtectionRuntimeConfig{
-			AuditOnly:               config.AuditOnly,
-			SingleSessionTokenLimit: config.SingleSessionTokenLimit,
-			DailyTokenLimit:         config.DailyTokenLimit,
+			AuditOnly:                 config.AuditOnly,
+			SingleSessionTokenLimit:   config.SingleSessionTokenLimit,
+			DailyTokenLimit:           config.DailyTokenLimit,
+			UserInputDetectionEnabled: &config.UserInputDetectionEnabled,
 		},
 	}, nil
 }
@@ -334,9 +335,10 @@ func applyProtectionPolicyRuntimeForSync(previousConfig, config *repository.Prot
 	runningProxy := proxy.GetProxyProtectionByAsset(config.AssetID)
 	if runningProxy != nil && runningProxy.IsRunning() {
 		runtimeCfg := &proxy.ProtectionRuntimeConfig{
-			AuditOnly:               config.AuditOnly,
-			SingleSessionTokenLimit: config.SingleSessionTokenLimit,
-			DailyTokenLimit:         config.DailyTokenLimit,
+			AuditOnly:                 config.AuditOnly,
+			SingleSessionTokenLimit:   config.SingleSessionTokenLimit,
+			DailyTokenLimit:           config.DailyTokenLimit,
+			UserInputDetectionEnabled: &config.UserInputDetectionEnabled,
 		}
 		runningProxy.UpdateProtectionConfig(runtimeCfg)
 		if userRules != nil {

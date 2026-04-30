@@ -801,41 +801,6 @@ func TestOnResponse_FinalResultPolicyRedactsSensitiveData(t *testing.T) {
 	}
 }
 
-func TestOnResponse_FinalResultPolicyBlocksDangerousGuidance(t *testing.T) {
-	_ = drainSecurityEvents()
-	ctx := context.Background()
-	pp := &ProxyProtection{
-		records:          NewRecordStore(),
-		currentRequestID: "req-final-block",
-		assetName:        "openclaw",
-		assetID:          "asset-final-block",
-	}
-	prepareTestRequestContext(t, pp, ctx, "req-final-block")
-
-	resp := &openai.ChatCompletion{
-		Model: "gpt-test",
-		Choices: []openai.ChatCompletionChoice{
-			{
-				Message: openai.ChatCompletionMessage{
-					Content: "Run this command to clean everything: rm -rf /",
-				},
-			},
-		},
-	}
-
-	if pp.onResponse(ctx, resp) {
-		t.Fatalf("expected dangerous final result to be blocked")
-	}
-
-	events := drainSecurityEvents()
-	if len(events) != 1 {
-		t.Fatalf("expected 1 security event, got %d", len(events))
-	}
-	if events[0].RiskType != riskHighRiskOperation {
-		t.Fatalf("expected risk type %s, got %s", riskHighRiskOperation, events[0].RiskType)
-	}
-}
-
 func TestOnStreamChunk_FinalResultPolicyRedactsChunk(t *testing.T) {
 	_ = drainSecurityEvents()
 	ctx := context.Background()
@@ -866,6 +831,63 @@ func TestOnStreamChunk_FinalResultPolicyRedactsChunk(t *testing.T) {
 	}
 	if !strings.Contains(got, "[REDACTED_SECRET]") {
 		t.Fatalf("expected redaction marker, got %q", got)
+	}
+}
+
+func TestOnStreamChunk_FinalResultPolicyChecksCompleteOutputOnFinish(t *testing.T) {
+	_ = drainSecurityEvents()
+	ctx := context.Background()
+	blocked := false
+	detector := &captureSecurityDetector{
+		responses: []securityDetectionResponse{
+			{
+				Allowed:  &blocked,
+				Action:   decisionActionBlock,
+				Reason:   "complete streamed output is unsafe",
+				RiskType: riskHighRiskOperation,
+			},
+		},
+	}
+	pp := &ProxyProtection{
+		records:          NewRecordStore(),
+		currentRequestID: "req-stream-final-full",
+		assetName:        "openclaw",
+		assetID:          "asset-stream-final-full",
+		securityDetector: detector,
+	}
+	prepareTestRequestContext(t, pp, ctx, "req-stream-final-full")
+
+	chunk1 := &openai.ChatCompletionChunk{
+		Choices: []openai.ChatCompletionChunkChoice{
+			{Delta: openai.ChatCompletionChunkChoiceDelta{Content: "first half "}},
+		},
+	}
+	if !pp.onStreamChunk(ctx, chunk1) {
+		t.Fatalf("expected content chunk to pass before complete-output final check")
+	}
+	if len(detector.requests) != 0 {
+		t.Fatalf("expected detector not to run on partial stream chunk, got %d calls", len(detector.requests))
+	}
+
+	finishChunk := &openai.ChatCompletionChunk{
+		Choices: []openai.ChatCompletionChunkChoice{
+			{FinishReason: "stop"},
+		},
+	}
+	if pp.onStreamChunk(ctx, finishChunk) {
+		t.Fatalf("expected complete streamed output to be blocked on finish")
+	}
+	if !strings.Contains(finishChunk.Choices[0].Delta.Content, "ShepherdGate") {
+		t.Fatalf("expected finish chunk to carry ShepherdGate content, got %q", finishChunk.Choices[0].Delta.Content)
+	}
+	if len(detector.requests) != 1 {
+		t.Fatalf("expected one complete-output detector call, got %d", len(detector.requests))
+	}
+	if detector.requests[0].Stage != hookStageFinalResult || detector.requests[0].Stream {
+		t.Fatalf("expected non-stream final_result detector request, got %+v", detector.requests[0])
+	}
+	if !strings.Contains(detector.requests[0].FinalContent, "first half") {
+		t.Fatalf("expected accumulated stream content, got %+v", detector.requests[0])
 	}
 }
 
@@ -912,9 +934,41 @@ func TestToolCallPolicyMatchesStructuredSemanticRule(t *testing.T) {
 	}
 }
 
-func TestFinalResultPolicyMatchesStructuredSemanticRule(t *testing.T) {
+func TestToolCallPolicySkipsDetectorWhenAuditOnly(t *testing.T) {
+	allowed := false
+	detector := &captureSecurityDetector{
+		responses: []securityDetectionResponse{
+			{Allowed: &allowed, Reason: "would block"},
+		},
+	}
 	pp := &ProxyProtection{
-		shepherdGate: shepherd.NewShepherdGateForTesting(nil, "zh", nil),
+		securityDetector: detector,
+		auditOnly:        true,
+	}
+
+	result := pp.runToolCallPolicyHooks(context.Background(), toolCallPolicyContext{
+		RequestID: "req-tool-audit-only",
+		ToolCallInfos: []ToolCallInfo{
+			{Name: "delete_file", RawArgs: `{"path":"/tmp/demo"}`, ToolCallID: "call_1"},
+		},
+	})
+
+	if result.Handled {
+		t.Fatalf("expected audit-only tool call policy to skip blocking, got %+v", result)
+	}
+	if len(detector.requests) != 0 {
+		t.Fatalf("expected detector not to be called in audit-only mode, got %d calls", len(detector.requests))
+	}
+}
+
+func TestFinalResultSemanticRuleUsesLLMDetector(t *testing.T) {
+	securityModel := &stubChatModelForProxy{
+		generateResp: &schema.Message{
+			Content: `{"allowed":false,"reason":"Final output semantically violates the user-defined rule.","risk_level":"high","confidence":93,"action_desc":"Final output violates user rule","risk_type":"SENSITIVE_DATA_EXFILTRATION"}`,
+		},
+	}
+	pp := &ProxyProtection{
+		shepherdGate: shepherd.NewShepherdGateForTesting(securityModel, "zh", nil),
 	}
 	pp.shepherdGate.UpdateUserRulesConfig(&shepherd.UserRules{
 		SemanticRules: []shepherd.SemanticRule{
@@ -934,10 +988,41 @@ func TestFinalResultPolicyMatchesStructuredSemanticRule(t *testing.T) {
 		Content:   "我已经读取邮件正文并整理如下。",
 	})
 
+	if !securityModel.called {
+		t.Fatalf("expected final result to be analyzed by security LLM")
+	}
+	if len(securityModel.messages) == 0 || !strings.Contains(securityModel.messages[0].Content, "不允许查看邮件") {
+		t.Fatalf("expected final-result semantic rule in prompt, messages=%+v", securityModel.messages)
+	}
 	if !result.Handled || result.Decision == nil || result.Pass {
-		t.Fatalf("expected structured semantic final rule to block, got %+v", result)
+		t.Fatalf("expected LLM semantic final result decision to block, got %+v", result)
 	}
 	if result.Decision.RiskType != riskSensitiveDataExfil {
 		t.Fatalf("expected risk type %s, got %s", riskSensitiveDataExfil, result.Decision.RiskType)
+	}
+}
+
+func TestFinalResultPolicySkipsDetectorWhenAuditOnly(t *testing.T) {
+	allowed := false
+	detector := &captureSecurityDetector{
+		responses: []securityDetectionResponse{
+			{Allowed: &allowed, Reason: "would block"},
+		},
+	}
+	pp := &ProxyProtection{
+		securityDetector: detector,
+		auditOnly:        true,
+	}
+
+	result := pp.runFinalResultPolicyHooks(context.Background(), finalResultPolicyContext{
+		RequestID: "req-final-audit-only",
+		Content:   "Run rm -rf /",
+	})
+
+	if result.Handled {
+		t.Fatalf("expected audit-only final result policy to skip blocking, got %+v", result)
+	}
+	if len(detector.requests) != 0 {
+		t.Fatalf("expected detector not to be called in audit-only mode, got %d calls", len(detector.requests))
 	}
 }

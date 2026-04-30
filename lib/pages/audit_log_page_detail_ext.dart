@@ -328,7 +328,10 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
           ),
           const SizedBox(height: 6),
           SelectableText(
-            evt.actionDesc,
+            localizeSecurityActionDesc(
+              evt.actionDesc,
+              AppLocalizations.of(context)!,
+            ),
             style: AppFonts.inter(fontSize: 11, color: Colors.white70),
           ),
           if (evt.detail.isNotEmpty) ...[

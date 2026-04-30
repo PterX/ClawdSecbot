@@ -1190,8 +1190,12 @@ func TestSetProtectionPolicy_WithoutBotIDFullySyncsInheritedAssets(t *testing.T)
 	}); err != nil {
 		t.Fatalf("SaveProtectionConfig asset failed: %v", err)
 	}
-	if err := repo.SaveShepherdSensitiveActions("openclaw", "policy-inherit-sync", []string{"old-rule"}); err != nil {
-		t.Fatalf("SaveShepherdSensitiveActions asset failed: %v", err)
+	if err := repo.SaveShepherdRulesRaw(
+		"openclaw",
+		"policy-inherit-sync",
+		`{"semantic_rules":[{"id":"old-rule","enabled":true,"description":"old rule","applies_to":["tool_call"],"action":"needs_confirmation","risk_type":"HIGH_RISK_OPERATION"}]}`,
+	); err != nil {
+		t.Fatalf("SaveShepherdRulesRaw asset failed: %v", err)
 	}
 
 	_, ts, token := setupTestServer(t)
@@ -1199,7 +1203,7 @@ func TestSetProtectionPolicy_WithoutBotIDFullySyncsInheritedAssets(t *testing.T)
 
 	body := bytes.NewBufferString(`{
 		"protection":"disabled",
-		"userRules":["new-rule"],
+		"userRules":{"semantic_rules":[{"id":"new-rule","enabled":true,"description":"new rule","applies_to":["tool_call"],"action":"needs_confirmation","risk_type":"HIGH_RISK_OPERATION"}]},
 		"tokenLimit":{"session":2000,"daily":3000},
 		"permission":{
 			"open":true,
@@ -1250,12 +1254,12 @@ func TestSetProtectionPolicy_WithoutBotIDFullySyncsInheritedAssets(t *testing.T)
 		t.Fatalf("expected inherited permissions to match default, got path=%s network=%s shell=%s", config.PathPermission, config.NetworkPermission, config.ShellPermission)
 	}
 
-	rules, found, err := repo.GetShepherdSensitiveActions("openclaw", "policy-inherit-sync")
+	rulesRaw, found, err := repo.GetShepherdRulesRaw("policy-inherit-sync")
 	if err != nil {
-		t.Fatalf("GetShepherdSensitiveActions failed: %v", err)
+		t.Fatalf("GetShepherdRulesRaw failed: %v", err)
 	}
-	if !found || len(rules) != 1 || rules[0] != "new-rule" {
-		t.Fatalf("expected inherited user rules to match default, got found=%v rules=%v", found, rules)
+	if !found || !strings.Contains(rulesRaw, "new-rule") {
+		t.Fatalf("expected inherited user rules to match default, got found=%v rules=%s", found, rulesRaw)
 	}
 }
 

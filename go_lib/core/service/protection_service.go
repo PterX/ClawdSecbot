@@ -77,6 +77,7 @@ func SaveProtectionConfig(jsonStr string) map[string]interface{} {
 	}
 
 	repo := repository.NewProtectionRepository(nil)
+	hasUserInputDetectionEnabled := jsonHasKey(jsonStr, "user_input_detection_enabled")
 
 	// 如果传入的配置没有 BotModelConfig，从数据库中读取已有的值并保留。
 	// 如果没有显式传入 inherits_default_policy，仅在内容未变化时保留继承标记；
@@ -89,6 +90,14 @@ func SaveProtectionConfig(jsonStr string) map[string]interface{} {
 			}
 			if !hasInheritsDefaultPolicy {
 				config.InheritsDefaultPolicy = shouldPreserveInheritedDefaultPolicy(existing, &config)
+			}
+		}
+	}
+	if !hasUserInputDetectionEnabled {
+		config.UserInputDetectionEnabled = true
+		if strings.TrimSpace(config.AssetID) != "" {
+			if existing, err := repo.GetProtectionConfig(config.AssetID); err == nil && existing != nil {
+				config.UserInputDetectionEnabled = existing.UserInputDetectionEnabled
 			}
 		}
 	}
@@ -210,6 +219,15 @@ func permissionListsAreEmpty(value interface{}) bool {
 	default:
 		return true
 	}
+}
+
+func jsonHasKey(raw, key string) bool {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return false
+	}
+	_, ok := payload[key]
+	return ok
 }
 
 // GetProtectionConfig returns the protection config for the specified asset instance.

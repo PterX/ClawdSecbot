@@ -21,6 +21,7 @@ import 'shepherd_rules_editor.dart';
 import '../services/plugin_service.dart';
 
 part 'protection_config_dialog_network.dart';
+part 'protection_config_dialog_user_input.dart';
 
 /// Token 单位枚举
 ///
@@ -81,40 +82,6 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
   static const String _botModelUpdatingMessage =
       '正在更新Openclaw配置，$_dashboardReconnectHint';
 
-  static const Map<String, String> _zhBundledSkillNameLabels = {
-    'data_exfiltration_guard': '数据外泄防护',
-    'file_access_guard': '文件访问防护',
-    'email_delete_guard': '邮件高风险操作防护',
-    'email_read_guard': '邮件高风险操作防护',
-    'email_operation_guard': '邮件高风险操作防护',
-    'browser_web_access_guard': '网页访问风险防护',
-    'prompt_injection_guard': '提示注入防护',
-    'script_execution_guard': '脚本执行防护',
-    'general_tool_risk_guard': '通用工具风险防护',
-    'supply_chain_guard': '供应链风险防护',
-    'persistence_backdoor_guard': '持久化后门防护',
-    'lateral_movement_guard': '横向移动风险防护',
-    'resource_exhaustion_guard': '资源耗尽风险防护',
-    'skill_installation_guard': '技能安装风险防护',
-  };
-
-  static const Map<String, String> _zhBundledSkillDescLabels = {
-    'data_exfiltration_guard': '检测并拦截可疑的数据导出、上传、批量外发行为。',
-    'file_access_guard': '约束高风险文件路径访问，防止越权读取和敏感文件操作。',
-    'email_delete_guard': '识别邮件删除、批量修改等高风险邮件行为并触发保护。',
-    'email_read_guard': '识别邮件读取与检索中的敏感访问场景并触发保护。',
-    'email_operation_guard': '统一评估邮件相关操作（读/写/删/导出）的安全风险。',
-    'browser_web_access_guard': '分析网页访问与外部内容注入风险，防止诱导后续危险操作。',
-    'prompt_injection_guard': '检测提示注入与越权指令，阻断恶意上下文污染。',
-    'script_execution_guard': '审查脚本与命令执行行为，拦截高危执行链路。',
-    'general_tool_risk_guard': '兜底评估未被专用规则覆盖的工具调用风险。',
-    'supply_chain_guard': '识别不可信依赖、来源异常和供应链投毒风险。',
-    'persistence_backdoor_guard': '检测建立持久化机制与后门驻留的可疑行为。',
-    'lateral_movement_guard': '识别跨主机/跨账户扩散与横向移动行为。',
-    'resource_exhaustion_guard': '识别可能导致 CPU、内存、磁盘或网络耗尽的行为。',
-    'skill_installation_guard': '审查技能安装和加载行为，阻止潜在恶意能力注入。',
-  };
-
   late TabController _tabController;
   late ProtectionConfig _config;
   bool _isLoading = true;
@@ -167,6 +134,13 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
 
   // 仅审计模式
   bool _auditOnly = false;
+
+  // 用户输入检测
+  bool _userInputDetectionEnabled = true;
+
+  void _setUserInputDetectionEnabled(bool value) {
+    setState(() => _userInputDetectionEnabled = value);
+  }
 
   // 防止重复点击保存
   bool _isSaving = false;
@@ -340,6 +314,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
 
       // 仅审计模式
       _auditOnly = _config.auditOnly;
+      _userInputDetectionEnabled = _config.userInputDetectionEnabled;
 
       final ruleSet = await protectionDatabaseService.getShepherdRuleSet(
         widget.assetName,
@@ -662,6 +637,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
         assetID: _config.assetID.isNotEmpty ? _config.assetID : widget.assetID,
         enabled: shouldEnable,
         auditOnly: _auditOnly,
+        userInputDetectionEnabled: _userInputDetectionEnabled,
         sandboxEnabled: _sandboxEnabled,
         singleSessionTokenLimit: _displayToRaw(
           _singleSessionDisplayController.text,
@@ -753,7 +729,10 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
           try {
             final result = await protectionService.startProtectionProxy(
               securityModelConfig,
-              ProtectionRuntimeConfig(auditOnly: _auditOnly),
+              ProtectionRuntimeConfig(
+                auditOnly: _auditOnly,
+                userInputDetectionEnabled: _userInputDetectionEnabled,
+              ),
             );
             if (result['success'] == true) {
               appLogger.info(
@@ -781,6 +760,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
             assetID: newConfig.assetID,
             singleSessionTokenLimit: newConfig.singleSessionTokenLimit,
             dailyTokenLimit: newConfig.dailyTokenLimit,
+            userInputDetectionEnabled: _userInputDetectionEnabled,
           );
 
           // 4b. 沙箱配置变更时同步到网关（修改 systemd unit / sandbox-exec 并重启 gateway）
@@ -1034,9 +1014,12 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
           // 仅审计模式开关
           _buildAuditOnlySwitch(l10n),
           const SizedBox(height: 16),
+          _buildUserInputDetectionSwitch(l10n),
+          const SizedBox(height: 16),
 
           ShepherdRulesEditor(
             rules: _semanticRules,
+            bundledSkills: _bundledSkills,
             onChanged: (rules) {
               setState(() {
                 _semanticRules
@@ -1045,10 +1028,6 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
               });
             },
           ),
-          const SizedBox(height: 16),
-
-          // 安全技能展示区域
-          _buildSecuritySkillsSection(l10n),
 
           const SizedBox(height: 16),
           Container(
@@ -1081,144 +1060,6 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
         ],
       ),
     );
-  }
-
-  /// 构建安全技能只读展示区域
-  Widget _buildSecuritySkillsSection(AppLocalizations l10n) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionHeader(
-            l10n.securitySkillsTitle,
-            LucideIcons.shieldCheck,
-            l10n.securitySkillsDesc,
-          ),
-          const SizedBox(height: 16),
-          if (_bundledSkills.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.03),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              child: Text(
-                '-',
-                style: AppFonts.inter(fontSize: 12, color: Colors.white38),
-              ),
-            )
-          else
-            Column(
-              children: _bundledSkills.map((skill) {
-                final rawName = skill['name']?.toString() ?? '';
-                final rawDesc = skill['description']?.toString() ?? '';
-                final localizedName = _localizeBundledSkillNameForDisplay(
-                  rawName,
-                  l10n,
-                );
-                final localizedDesc = _localizeBundledSkillDescForDisplay(
-                  rawName,
-                  rawDesc,
-                  l10n,
-                );
-                final name = localizedName == rawName ? rawName : localizedName;
-                final desc = localizedDesc == rawDesc ? rawDesc : localizedDesc;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF22C55E).withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: const Color(0xFF22C55E).withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF22C55E).withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Icon(
-                          LucideIcons.zap,
-                          size: 16,
-                          color: Color(0xFF22C55E),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              name,
-                              style: AppFonts.firaCode(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                            if (desc.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                desc,
-                                style: AppFonts.inter(
-                                  fontSize: 11,
-                                  color: Colors.white54,
-                                ),
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-        ],
-      ),
-    );
-  }
-
-  String _localizeBundledSkillNameForDisplay(
-    String rawName,
-    AppLocalizations l10n,
-  ) {
-    if (!l10n.localeName.startsWith('zh')) {
-      return rawName;
-    }
-    final normalized = rawName.trim().toLowerCase();
-    if (normalized.isEmpty) {
-      return rawName;
-    }
-    return _zhBundledSkillNameLabels[normalized] ?? rawName;
-  }
-
-  String _localizeBundledSkillDescForDisplay(
-    String rawName,
-    String rawDesc,
-    AppLocalizations l10n,
-  ) {
-    if (!l10n.localeName.startsWith('zh')) {
-      return rawDesc;
-    }
-    final normalized = rawName.trim().toLowerCase();
-    if (normalized.isEmpty) {
-      return rawDesc;
-    }
-    return _zhBundledSkillDescLabels[normalized] ?? rawDesc;
   }
 
   Widget _buildAuditOnlySwitch(AppLocalizations l10n) {

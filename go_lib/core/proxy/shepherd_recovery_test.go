@@ -17,10 +17,12 @@ type stubChatModelForProxy struct {
 	generateResp *schema.Message
 	generateErr  error
 	called       bool
+	messages     []*schema.Message
 }
 
-func (m *stubChatModelForProxy) Generate(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+func (m *stubChatModelForProxy) Generate(_ context.Context, messages []*schema.Message, _ ...model.Option) (*schema.Message, error) {
 	m.called = true
+	m.messages = append([]*schema.Message(nil), messages...)
 	if m.generateErr != nil {
 		return nil, m.generateErr
 	}

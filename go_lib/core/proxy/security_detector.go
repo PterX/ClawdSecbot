@@ -76,6 +76,9 @@ func (d *llmAgentSecurityDetector) Detect(ctx context.Context, req securityDetec
 	case hookStageToolCall, hookStageToolCallResult:
 		decision, err := d.gate.CheckToolCall(ctx, req.ToolCalls, req.ToolResults, req.RequestID)
 		return detectionResponseFromShepherdDecision(decision), err
+	case hookStageFinalResult:
+		decision, err := d.gate.CheckFinalResult(ctx, req.FinalContent, req.RequestID)
+		return detectionResponseFromShepherdDecision(decision), err
 	default:
 		return nil, nil
 	}
@@ -347,4 +350,13 @@ func (pp *ProxyProtection) currentSecurityDetector() securityDetector {
 		return &llmAgentSecurityDetector{gate: pp.shepherdGate}
 	}
 	return nil
+}
+
+func (pp *ProxyProtection) isAuditOnlyMode() bool {
+	if pp == nil {
+		return false
+	}
+	pp.configMu.RLock()
+	defer pp.configMu.RUnlock()
+	return pp.auditOnly
 }

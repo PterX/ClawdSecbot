@@ -435,6 +435,37 @@ func TestInitDBWithVersion_UpgradesFrom1_0_3To1_0_4_AddsInstructionChainColumns(
 		`); err != nil {
 			t.Fatalf("Failed to seed security_events: %v", err)
 		}
+		if _, err := db.Exec(`
+			CREATE TABLE protection_config (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				asset_name TEXT NOT NULL,
+				asset_id TEXT NOT NULL,
+				inherits_default_policy INTEGER NOT NULL DEFAULT 0,
+				enabled INTEGER NOT NULL DEFAULT 0,
+				audit_only INTEGER NOT NULL DEFAULT 0,
+				sandbox_enabled INTEGER NOT NULL DEFAULT 0,
+				gateway_binary_path TEXT,
+				gateway_config_path TEXT,
+				custom_security_prompt TEXT DEFAULT '',
+				single_session_token_limit INTEGER DEFAULT 0,
+				daily_token_limit INTEGER DEFAULT 0,
+				path_permission TEXT DEFAULT '{}',
+				network_permission TEXT DEFAULT '{}',
+				shell_permission TEXT DEFAULT '{}',
+				bot_model_config TEXT,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL,
+				UNIQUE(asset_id)
+			)
+		`); err != nil {
+			t.Fatalf("Failed to create protection_config: %v", err)
+		}
+		if _, err := db.Exec(`
+			INSERT INTO protection_config (asset_name, asset_id, created_at, updated_at)
+			VALUES ('openclaw', 'openclaw:a1', '2026-04-25T00:00:00Z', '2026-04-25T00:00:00Z')
+		`); err != nil {
+			t.Fatalf("Failed to seed protection_config: %v", err)
+		}
 	})
 
 	summary, err := InitDBWithVersion(dbPath, "1.0.4", versionFilePath)
@@ -450,8 +481,16 @@ func TestInitDBWithVersion_UpgradesFrom1_0_3To1_0_4_AddsInstructionChainColumns(
 	assertMetadataVersion(t, GetDB(), "1.0.4")
 	assertColumnExists(t, GetDB(), "audit_logs", "instruction_chain_id")
 	assertColumnExists(t, GetDB(), "security_events", "instruction_chain_id")
+	assertColumnExists(t, GetDB(), "protection_config", "user_input_detection_enabled")
 	assertTableRowCount(t, GetDB(), "audit_logs", 1)
 	assertTableRowCount(t, GetDB(), "security_events", 1)
+	var enabled int
+	if err := GetDB().QueryRow(`SELECT user_input_detection_enabled FROM protection_config WHERE asset_id = 'openclaw:a1'`).Scan(&enabled); err != nil {
+		t.Fatalf("Failed to query user_input_detection_enabled: %v", err)
+	}
+	if enabled != 1 {
+		t.Fatalf("Expected existing configs to default user_input_detection_enabled=1, got %d", enabled)
+	}
 }
 
 func prepareSQLiteFile(t *testing.T, dbPath string, setup func(db *sql.DB)) {

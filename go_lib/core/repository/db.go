@@ -114,6 +114,7 @@ func createProtectionTables(db *sql.DB) error {
 			enabled INTEGER NOT NULL DEFAULT 0,
 			audit_only INTEGER NOT NULL DEFAULT 0,
 			sandbox_enabled INTEGER NOT NULL DEFAULT 0,
+			user_input_detection_enabled INTEGER NOT NULL DEFAULT 1,
 			gateway_binary_path TEXT,
 			gateway_config_path TEXT,
 			custom_security_prompt TEXT DEFAULT '',

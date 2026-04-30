@@ -110,6 +110,65 @@ func TestOnResponse_UsesStableRequestIDForTruthRecordCompletion(t *testing.T) {
 	}
 }
 
+func TestOnResponse_PreservesProviderTotalTokensInTruthRecord(t *testing.T) {
+	pp := &ProxyProtection{
+		records: NewRecordStore(),
+	}
+	ctx := context.Background()
+	prepareTestRequestContext(t, pp, ctx, "req-provider-total")
+
+	pp.updateTruthRecord("req-provider-total", func(r *TruthRecord) {
+		r.Model = "gemini-test"
+		r.Phase = advanceRecordPhase(r.Phase, RecordPhaseStarting)
+	})
+	_ = pp.records.Pending()
+
+	resp := &openai.ChatCompletion{
+		Model: "gemini-test",
+		Choices: []openai.ChatCompletionChoice{
+			{
+				FinishReason: "stop",
+				Message: openai.ChatCompletionMessage{
+					Content: "done",
+				},
+			},
+		},
+		Usage: openai.CompletionUsage{
+			PromptTokens:     10,
+			CompletionTokens: 5,
+			TotalTokens:      18,
+		},
+	}
+
+	if !pp.onResponse(ctx, resp) {
+		t.Fatalf("expected onResponse to pass")
+	}
+
+	pp.metricsMu.Lock()
+	totalTokens := pp.totalTokens
+	pp.metricsMu.Unlock()
+	if totalTokens != 18 {
+		t.Fatalf("expected runtime total tokens 18, got %d", totalTokens)
+	}
+
+	pending := pp.records.Pending()
+	var record *TruthRecord
+	for i := range pending {
+		if pending[i].RequestID == "req-provider-total" {
+			record = &pending[i]
+		}
+	}
+	if record == nil {
+		t.Fatalf("expected truth record snapshot")
+	}
+	if record.TotalTokens != 18 {
+		t.Fatalf("expected truth record total tokens 18, got %d", record.TotalTokens)
+	}
+	if record.PromptTokens+record.CompletionTokens == record.TotalTokens {
+		t.Fatalf("expected non-additive provider total to be preserved")
+	}
+}
+
 func TestOnStreamChunk_UsageAccumulatesByDeltaForCumulativeReports(t *testing.T) {
 	pp := &ProxyProtection{}
 	ctx := context.Background()

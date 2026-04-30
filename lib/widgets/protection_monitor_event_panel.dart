@@ -178,7 +178,7 @@ class _ProtectionMonitorEventPanelState
                   Expanded(
                     child: Text(
                       event.actionDesc.isNotEmpty
-                          ? event.actionDesc
+                          ? localizeSecurityActionDesc(event.actionDesc, l10n)
                           : _getEventTypeLabel(event, l10n),
                       style: AppFonts.inter(
                         fontSize: 12,
@@ -408,7 +408,7 @@ class _SecurityEventDetailDialogState
                         if (event.actionDesc.isNotEmpty)
                           _buildDetailRow(
                             l10n.eventActionDesc,
-                            event.actionDesc,
+                            localizeSecurityActionDesc(event.actionDesc, l10n),
                           ),
                         if (event.riskType.isNotEmpty)
                           _buildDetailRow(
@@ -499,7 +499,11 @@ class _SecurityEventDetailDialogState
     buf.writeln('Security Event: ${event.id}');
     buf.writeln('Time: ${_formatFullTime(event.timestamp)}');
     buf.writeln('Type: ${localizeSecurityEventType(event.eventType, l10n)}');
-    if (event.actionDesc.isNotEmpty) buf.writeln('Action: ${event.actionDesc}');
+    if (event.actionDesc.isNotEmpty) {
+      buf.writeln(
+        'Action: ${localizeSecurityActionDesc(event.actionDesc, l10n)}',
+      );
+    }
     if (event.riskType.isNotEmpty) {
       buf.writeln('Risk: ${localizeSecurityRiskType(event.riskType, l10n)}');
     }

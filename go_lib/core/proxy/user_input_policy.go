@@ -44,6 +44,11 @@ func (shepherdUserInputPolicyHook) Evaluate(ctx context.Context, pp *ProxyProtec
 		return userInputPolicyResult{}
 	}
 	pp.sendSecurityFlowLog(securityFlowStageUserInput, "analysis_start: user_message_count=%d combined_chars=%d", countUserMessages(policyCtx.Messages), len(userText))
+	if pp.isAuditOnlyMode() {
+		logSecurityFlowInfo(securityFlowStageUserInput, "audit_only=true; skipping ShepherdGate analysis")
+		pp.sendSecurityFlowLog(securityFlowStageUserInput, "audit_only=true; allowing user input without blocking")
+		return userInputPolicyResult{}
+	}
 
 	if detectorResult, ok := pp.evaluateUserInputWithDetector(ctx, policyCtx.RequestID, userText); ok {
 		return detectorResult
@@ -238,6 +243,10 @@ func isInjectedUserContext(content string) bool {
 }
 
 func (pp *ProxyProtection) runUserInputPolicyHooks(ctx context.Context, policyCtx userInputPolicyContext) userInputPolicyResult {
+	if pp == nil || !pp.isUserInputDetectionEnabled() {
+		logSecurityFlowInfo(securityFlowStageUserInput, "user_input_detection_enabled=false; skipping user input analysis")
+		return userInputPolicyResult{}
+	}
 	hooks := []userInputPolicyHook{
 		shepherdUserInputPolicyHook{},
 	}
@@ -248,4 +257,16 @@ func (pp *ProxyProtection) runUserInputPolicyHooks(ctx context.Context, policyCt
 		}
 	}
 	return userInputPolicyResult{}
+}
+
+func (pp *ProxyProtection) isUserInputDetectionEnabled() bool {
+	if pp == nil {
+		return false
+	}
+	pp.configMu.RLock()
+	defer pp.configMu.RUnlock()
+	if !pp.userInputDetectionSet {
+		return true
+	}
+	return pp.userInputDetection
 }

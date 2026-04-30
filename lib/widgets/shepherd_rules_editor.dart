@@ -8,11 +8,13 @@ import '../utils/app_fonts.dart';
 
 class ShepherdRulesEditor extends StatefulWidget {
   final List<ShepherdSemanticRule> rules;
+  final List<Map<String, dynamic>> bundledSkills;
   final ValueChanged<List<ShepherdSemanticRule>> onChanged;
 
   const ShepherdRulesEditor({
     super.key,
     required this.rules,
+    required this.bundledSkills,
     required this.onChanged,
   });
 
@@ -56,6 +58,42 @@ class _ShepherdRulesEditorState extends State<ShepherdRulesEditor> {
     'cmd': '命令行执行',
   };
 
+  static const Map<String, String> _zhBundledSkillNameLabels = {
+    'data_exfiltration_guard': '数据外泄防护',
+    'file_access_guard': '文件访问防护',
+    'email_delete_guard': '邮件高风险操作防护',
+    'email_read_guard': '邮件高风险操作防护',
+    'email_operation_guard': '邮件高风险操作防护',
+    'browser_web_access_guard': '网页访问风险防护',
+    'prompt_injection_guard': '提示注入防护',
+    'script_execution_guard': '脚本执行防护',
+    'command_execution_guard': '命令执行防护',
+    'general_tool_risk_guard': '通用工具风险防护',
+    'supply_chain_guard': '供应链风险防护',
+    'persistence_backdoor_guard': '持久化后门防护',
+    'lateral_movement_guard': '横向移动风险防护',
+    'resource_exhaustion_guard': '资源耗尽风险防护',
+    'skill_installation_guard': '技能安装风险防护',
+  };
+
+  static const Map<String, String> _zhBundledSkillDescLabels = {
+    'data_exfiltration_guard': '检测并拦截可疑的数据导出、上传、批量外发行为。',
+    'file_access_guard': '约束高风险文件路径访问，防止越权读取和敏感文件操作。',
+    'email_delete_guard': '识别邮件删除、批量修改等高风险邮件行为并触发保护。',
+    'email_read_guard': '识别邮件读取与检索中的敏感访问场景并触发保护。',
+    'email_operation_guard': '统一评估邮件相关操作（读/写/删/导出）的安全风险。',
+    'browser_web_access_guard': '分析网页访问与外部内容注入风险，防止诱导后续危险操作。',
+    'prompt_injection_guard': '检测提示注入与越权指令，阻断恶意上下文污染。',
+    'script_execution_guard': '审查脚本与命令执行行为，拦截高危执行链路。',
+    'command_execution_guard': '审查命令执行行为，识别跨平台高危命令并触发二次确认。',
+    'general_tool_risk_guard': '兜底评估未被专用规则覆盖的工具调用风险。',
+    'supply_chain_guard': '识别不可信依赖、来源异常和供应链投毒风险。',
+    'persistence_backdoor_guard': '检测建立持久化机制与后门驻留的可疑行为。',
+    'lateral_movement_guard': '识别跨主机/跨账户扩散与横向移动行为。',
+    'resource_exhaustion_guard': '识别可能导致 CPU、内存、磁盘或网络耗尽的行为。',
+    'skill_installation_guard': '审查技能安装和加载行为，阻止潜在恶意能力注入。',
+  };
+
   @override
   void dispose() {
     _controller.dispose();
@@ -65,6 +103,7 @@ class _ShepherdRulesEditorState extends State<ShepherdRulesEditor> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final isZh = l10n.localeName.startsWith('zh');
     final customRules = widget.rules.where((rule) => rule.isCustom).toList();
     final builtinRules = widget.rules.where((rule) => !rule.isCustom).toList();
 
@@ -88,9 +127,24 @@ class _ShepherdRulesEditorState extends State<ShepherdRulesEditor> {
             ...customRules.map(_buildRuleRow),
             const SizedBox(height: 12),
           ],
-          _buildSectionLabel(l10n.securitySkillsTitle),
+          _buildSectionLabel(isZh ? '内置规则' : 'Built-in Rules'),
           const SizedBox(height: 8),
           ...builtinRules.map(_buildRuleRow),
+          const SizedBox(height: 12),
+          _buildSectionLabel(l10n.securitySkillsTitle),
+          const SizedBox(height: 4),
+          Text(
+            l10n.securitySkillsDesc,
+            style: AppFonts.inter(fontSize: 11, color: Colors.white54),
+          ),
+          const SizedBox(height: 8),
+          if (widget.bundledSkills.isEmpty)
+            Text(
+              '-',
+              style: AppFonts.inter(fontSize: 12, color: Colors.white38),
+            )
+          else
+            ...widget.bundledSkills.map((skill) => _buildSkillRow(skill, l10n)),
         ],
       ),
     );
@@ -270,6 +324,85 @@ class _ShepherdRulesEditorState extends State<ShepherdRulesEditor> {
     );
   }
 
+  Widget _buildSkillRow(Map<String, dynamic> skill, AppLocalizations l10n) {
+    final rawName = skill['name']?.toString() ?? '';
+    final rawDesc = skill['description']?.toString() ?? '';
+    final name = _localizeBundledSkillNameForDisplay(rawName, l10n);
+    final desc = _localizeBundledSkillDescForDisplay(rawName, rawDesc, l10n);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827).withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: const Color(0xFF22C55E).withValues(alpha: 0.26),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF22C55E).withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Icon(
+              LucideIcons.zap,
+              size: 15,
+              color: Color(0xFF22C55E),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: AppFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                if (desc.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    desc,
+                    style: AppFonts.inter(fontSize: 11, color: Colors.white54),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _buildBadge(
+                      l10n.localeName.startsWith('zh')
+                          ? '安全技能'
+                          : 'Security skill',
+                    ),
+                    _buildBadge(
+                      l10n.localeName.startsWith('zh') ? '内置' : 'Built-in',
+                    ),
+                    _buildBadge(
+                      l10n.localeName.startsWith('zh') ? '工具调用' : 'Tool call',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBadge(String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -356,6 +489,35 @@ class _ShepherdRulesEditorState extends State<ShepherdRulesEditor> {
     }
 
     return _zhSemanticRuleLabels[normalized] ?? rawRule;
+  }
+
+  String _localizeBundledSkillNameForDisplay(
+    String rawName,
+    AppLocalizations l10n,
+  ) {
+    if (!l10n.localeName.startsWith('zh')) {
+      return rawName;
+    }
+    final normalized = rawName.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return rawName;
+    }
+    return _zhBundledSkillNameLabels[normalized] ?? rawName;
+  }
+
+  String _localizeBundledSkillDescForDisplay(
+    String rawName,
+    String rawDesc,
+    AppLocalizations l10n,
+  ) {
+    if (!l10n.localeName.startsWith('zh')) {
+      return rawDesc;
+    }
+    final normalized = rawName.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return rawDesc;
+    }
+    return _zhBundledSkillDescLabels[normalized] ?? rawDesc;
   }
 
   String _localizeStage(String stage, bool isZh) {

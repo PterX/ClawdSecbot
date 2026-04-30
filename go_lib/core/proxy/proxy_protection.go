@@ -57,6 +57,8 @@ type ProxyProtection struct {
 	singleSessionTokenLimit int
 	dailyTokenLimit         int
 	initialDailyUsage       int
+	userInputDetection      bool
+	userInputDetectionSet   bool
 
 	// ShepherdGate runtime chain isolation state.
 	chainMu          sync.Mutex
@@ -483,11 +485,15 @@ func NewProxyProtectionFromConfig(protectionConfig *ProtectionConfig, logChan ch
 	singleSessionTokenLimit := 0
 	dailyTokenLimit := 0
 	initialDailyUsage := 0
+	userInputDetection := true
 	if runtime != nil {
 		auditOnly = runtime.AuditOnly
 		singleSessionTokenLimit = runtime.SingleSessionTokenLimit
 		dailyTokenLimit = runtime.DailyTokenLimit
 		initialDailyUsage = runtime.InitialDailyTokenUsage
+		if runtime.UserInputDetectionEnabled != nil {
+			userInputDetection = *runtime.UserInputDetectionEnabled
+		}
 	}
 
 	pp := &ProxyProtection{
@@ -505,6 +511,8 @@ func NewProxyProtectionFromConfig(protectionConfig *ProtectionConfig, logChan ch
 		singleSessionTokenLimit: singleSessionTokenLimit,
 		dailyTokenLimit:         dailyTokenLimit,
 		initialDailyUsage:       initialDailyUsage,
+		userInputDetection:      userInputDetection,
+		userInputDetectionSet:   true,
 		logChan:                 logChan,
 		records:                 NewRecordStore(),
 		auditTracker:            NewAuditChainTracker(),
@@ -530,8 +538,8 @@ func NewProxyProtectionFromConfig(protectionConfig *ProtectionConfig, logChan ch
 	pp.auditCompletionTokens = protectionConfig.BaselineAuditCompletionTokens
 	pp.baselineAuditTokens = protectionConfig.BaselineAuditTokens
 
-	logging.Info("[ProxyProtection] Token limits: conversation=%d, daily=%d, initialDailyUsage=%d, auditOnly=%v",
-		pp.singleSessionTokenLimit, pp.dailyTokenLimit, pp.initialDailyUsage, pp.auditOnly)
+	logging.Info("[ProxyProtection] Token limits: conversation=%d, daily=%d, initialDailyUsage=%d, auditOnly=%v, userInputDetection=%v",
+		pp.singleSessionTokenLimit, pp.dailyTokenLimit, pp.initialDailyUsage, pp.auditOnly, pp.userInputDetection)
 
 	// Create filter with callbacks
 	filter := chatmodelrouting.NewCallbackFilter(
@@ -558,6 +566,10 @@ func (pp *ProxyProtection) UpdateProtectionConfig(runtime *ProtectionRuntimeConf
 		pp.singleSessionTokenLimit = runtime.SingleSessionTokenLimit
 		pp.dailyTokenLimit = runtime.DailyTokenLimit
 		pp.initialDailyUsage = runtime.InitialDailyTokenUsage
+		if runtime.UserInputDetectionEnabled != nil {
+			pp.userInputDetection = *runtime.UserInputDetectionEnabled
+			pp.userInputDetectionSet = true
+		}
 	}
 	pp.configMu.Unlock()
 
@@ -581,8 +593,8 @@ func (pp *ProxyProtection) UpdateProtectionConfig(runtime *ProtectionRuntimeConf
 		}
 	}
 
-	pp.sendTerminalLog(fmt.Sprintf("防护配置已更新 - 审计模式: %v, 连续对话限额: %d, 每日限额: %d, 已用: %d",
-		pp.auditOnly, pp.singleSessionTokenLimit, pp.dailyTokenLimit, pp.initialDailyUsage))
+	pp.sendTerminalLog(fmt.Sprintf("防护配置已更新 - 审计模式: %v, 用户输入检测: %v, 连续对话限额: %d, 每日限额: %d, 已用: %d",
+		pp.auditOnly, pp.userInputDetection, pp.singleSessionTokenLimit, pp.dailyTokenLimit, pp.initialDailyUsage))
 }
 
 // UpdateSecurityModelConfig 热更新安全模型（ShepherdGate）的 chat model 配置。
@@ -1130,13 +1142,14 @@ func (pp *ProxyProtection) markSandboxBlockedToolResultIfFirst(
 	return true
 }
 
-// finalizeTruthRecord 完成请求记录：设置输出内容、token、生成的工具调用，并标记为 completed。
-// 工具调用按 ID 去重，避免流式路径中 onStreamChunk 与 finalize 双重追加。
-func (pp *ProxyProtection) finalizeTruthRecord(requestID string, outputContent string, generatedToolCalls []openai.ChatCompletionMessageToolCall, promptTokens, completionTokens int) {
+// finalizeTruthRecord completes the request record with output, token usage, and generated tool calls.
+// Tool calls are deduplicated by ID to avoid double appends from stream chunks and finalization.
+func (pp *ProxyProtection) finalizeTruthRecord(requestID string, outputContent string, generatedToolCalls []openai.ChatCompletionMessageToolCall, promptTokens, completionTokens, totalTokens int) {
 	pp.updateTruthRecord(requestID, func(r *TruthRecord) {
 		r.OutputContent = truncateToBytes(outputContent, maxRecordOutputBytes)
 		r.PromptTokens = promptTokens
 		r.CompletionTokens = completionTokens
+		r.TotalTokens = totalTokens
 		r.CompletedAt = time.Now().Format(time.RFC3339Nano)
 		r.Phase = RecordPhaseCompleted
 

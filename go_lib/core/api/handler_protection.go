@@ -259,8 +259,9 @@ func buildProtectionPolicyResponse(repo *repository.ProtectionRepository, botID 
 			usesDefaultPolicy = true
 		} else {
 			config = &repository.ProtectionConfig{
-				AssetName: assetName,
-				AssetID:   botID,
+				AssetName:                 assetName,
+				AssetID:                   botID,
+				UserInputDetectionEnabled: true,
 			}
 		}
 	}
@@ -312,8 +313,9 @@ func saveDefaultProtectionPolicy(repo *repository.ProtectionRepository, req *Pro
 	}
 	if config == nil {
 		config = &repository.ProtectionConfig{
-			AssetName: repository.DefaultProtectionPolicyAssetName,
-			AssetID:   repository.DefaultProtectionPolicyAssetID,
+			AssetName:                 repository.DefaultProtectionPolicyAssetName,
+			AssetID:                   repository.DefaultProtectionPolicyAssetID,
+			UserInputDetectionEnabled: true,
 		}
 	}
 	// 默认策略记录本身不应标记为“继承默认策略”。
@@ -401,8 +403,9 @@ func updateProtectionPolicyForBotID(repo *repository.ProtectionRepository, botID
 	previousConfig := cloneProtectionConfig(existingConfig)
 
 	config := &repository.ProtectionConfig{
-		AssetName: assetName,
-		AssetID:   botID,
+		AssetName:                 assetName,
+		AssetID:                   botID,
+		UserInputDetectionEnabled: true,
 	}
 	if existingConfig != nil {
 		config = existingConfig
@@ -702,9 +705,10 @@ func buildPolicyProxyConfig(config *repository.ProtectionConfig) (*proxy.Protect
 			SecretKey: config.BotModelConfig.SecretKey,
 		},
 		Runtime: &proxy.ProtectionRuntimeConfig{
-			AuditOnly:               config.AuditOnly,
-			SingleSessionTokenLimit: config.SingleSessionTokenLimit,
-			DailyTokenLimit:         config.DailyTokenLimit,
+			AuditOnly:                 config.AuditOnly,
+			SingleSessionTokenLimit:   config.SingleSessionTokenLimit,
+			DailyTokenLimit:           config.DailyTokenLimit,
+			UserInputDetectionEnabled: &config.UserInputDetectionEnabled,
 		},
 	}, nil
 }
@@ -749,9 +753,10 @@ func applyProtectionPolicyRuntime(previousConfig, config *repository.ProtectionC
 	runningProxy := proxy.GetProxyProtectionByAsset(config.AssetID)
 	if runningProxy != nil && runningProxy.IsRunning() {
 		runtimeCfg := &proxy.ProtectionRuntimeConfig{
-			AuditOnly:               config.AuditOnly,
-			SingleSessionTokenLimit: config.SingleSessionTokenLimit,
-			DailyTokenLimit:         config.DailyTokenLimit,
+			AuditOnly:                 config.AuditOnly,
+			SingleSessionTokenLimit:   config.SingleSessionTokenLimit,
+			DailyTokenLimit:           config.DailyTokenLimit,
+			UserInputDetectionEnabled: &config.UserInputDetectionEnabled,
 		}
 		runningProxy.UpdateProtectionConfig(runtimeCfg)
 		if userRules != nil {

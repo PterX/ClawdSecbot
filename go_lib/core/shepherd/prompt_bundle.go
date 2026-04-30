@@ -11,6 +11,7 @@ var bundledPromptsFS embed.FS
 var (
 	userInputSystemPromptTemplate     = mustReadBundledPrompt("bundled_prompts/user_input_system.md")
 	toolCallGuardSystemPromptTemplate = mustReadBundledPrompt("bundled_prompts/tool_call_guard_system.md")
+	finalResultSystemPromptTemplate   = mustReadBundledPrompt("bundled_prompts/final_result_system.md")
 )
 
 func mustReadBundledPrompt(path string) string {

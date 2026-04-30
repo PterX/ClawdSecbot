@@ -1202,7 +1202,7 @@ class _AuditLogPageState extends State<AuditLogPage>
       .map((e) {
         final l10n = AppLocalizations.of(context)!;
         final parts = [
-          '[${localizeSecurityEventType(e.eventType, l10n)}] ${e.actionDesc}',
+          '[${localizeSecurityEventType(e.eventType, l10n)}] ${localizeSecurityActionDesc(e.actionDesc, l10n)}',
         ];
         if (e.riskType.isNotEmpty) {
           parts.add('Risk: ${localizeSecurityRiskType(e.riskType, l10n)}');

@@ -119,16 +119,17 @@ func TestProtectionConfig_CRUD(t *testing.T) {
 
 	// 保存配置
 	config := &ProtectionConfig{
-		AssetName:               "openclaw",
-		AssetID:                 "openclaw:test-1",
-		Enabled:                 true,
-		AuditOnly:               false,
-		SandboxEnabled:          true,
-		SingleSessionTokenLimit: 1000,
-		DailyTokenLimit:         5000,
-		PathPermission:          `{"allowed":["/"]}`,
-		NetworkPermission:       `{"allowed":["*"]}`,
-		ShellPermission:         `{"allowed":["ls"]}`,
+		AssetName:                 "openclaw",
+		AssetID:                   "openclaw:test-1",
+		Enabled:                   true,
+		AuditOnly:                 false,
+		SandboxEnabled:            true,
+		UserInputDetectionEnabled: true,
+		SingleSessionTokenLimit:   1000,
+		DailyTokenLimit:           5000,
+		PathPermission:            `{"allowed":["/"]}`,
+		NetworkPermission:         `{"allowed":["*"]}`,
+		ShellPermission:           `{"allowed":["ls"]}`,
 	}
 	err := repo.SaveProtectionConfig(config)
 	if err != nil {

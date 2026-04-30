@@ -18,6 +18,7 @@ type ProtectionRuntimeConfig struct {
 	SingleSessionTokenLimit       int    `json:"single_session_token_limit,omitempty"`
 	DailyTokenLimit               int    `json:"daily_token_limit,omitempty"`
 	InitialDailyTokenUsage        int    `json:"initial_daily_token_usage,omitempty"`
+	UserInputDetectionEnabled     *bool  `json:"user_input_detection_enabled,omitempty"`
 	CustomSecurityPrompt          string `json:"custom_security_prompt,omitempty"`
 	ReActEnableBuiltinSkills      *bool  `json:"react_enable_builtin_skills,omitempty"`
 	DetectionBackend              string `json:"detection_backend,omitempty"`

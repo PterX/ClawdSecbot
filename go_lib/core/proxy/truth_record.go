@@ -68,9 +68,10 @@ type TruthRecord struct {
 	// 安全决策 — nil 表示未经安全检测
 	Decision *SecurityDecision `json:"decision,omitempty"`
 
-	// Token 指标 — TotalTokens 由前端计算
+	// Token metrics.
 	PromptTokens       int `json:"prompt_tokens"`
 	CompletionTokens   int `json:"completion_tokens"`
+	TotalTokens        int `json:"total_tokens"`
 	ConversationTokens int `json:"conversation_tokens,omitempty"`
 	DailyTokens        int `json:"daily_tokens,omitempty"`
 }

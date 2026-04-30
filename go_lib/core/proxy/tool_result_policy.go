@@ -106,11 +106,7 @@ func (shepherdToolResultPolicyHook) Evaluate(ctx context.Context, pp *ProxyProte
 		return toolResultPolicyResult{}
 	}
 
-	pp.configMu.RLock()
-	auditOnlyForShepherd := pp.auditOnly
-	pp.configMu.RUnlock()
-
-	if auditOnlyForShepherd {
+	if pp.isAuditOnlyMode() {
 		logSecurityFlowInfo(securityFlowStageToolCallResult, "audit_only=true; skipping ShepherdGate analysis")
 		pp.sendSecurityFlowLog(securityFlowStageToolCallResult, "audit_only=true; allowing tool results without blocking")
 		return toolResultPolicyResult{}

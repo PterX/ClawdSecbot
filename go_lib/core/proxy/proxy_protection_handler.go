@@ -475,7 +475,7 @@ func (pp *ProxyProtection) onResponse(ctx context.Context, resp *openai.ChatComp
 		pp.metricsMu.Unlock()
 		conversationTotal := pp.addConversationTokens(totalTokens)
 		dailyTotal := pp.currentDailyTokenUsage()
-		pp.updateRecordTokenTotals(requestID, promptTokens, completionTokens, conversationTotal, dailyTotal)
+		pp.updateRecordTokenTotals(requestID, promptTokens, completionTokens, totalTokens, conversationTotal, dailyTotal)
 
 		if hasUsageFromUpstream {
 			pp.sendLogForRequest(requestID, "proxy_token_usage", map[string]interface{}{
@@ -495,7 +495,7 @@ func (pp *ProxyProtection) onResponse(ctx context.Context, resp *openai.ChatComp
 		pp.sendMetricsToCallback()
 	}
 	pp.auditLogSafe("update_tokens_on_response", func(tracker *AuditChainTracker) {
-		tracker.UpdateRequestTokens(requestID, promptTokens, completionTokens)
+		tracker.UpdateRequestTokens(requestID, promptTokens, completionTokens, totalTokens)
 	})
 
 	if len(generatedToolCalls) > 0 {
@@ -519,7 +519,7 @@ func (pp *ProxyProtection) onResponse(ctx context.Context, resp *openai.ChatComp
 	}
 
 	// Finalize via TruthRecord
-	pp.finalizeTruthRecord(requestID, outputContent, generatedToolCalls, promptTokens, completionTokens)
+	pp.finalizeTruthRecord(requestID, outputContent, generatedToolCalls, promptTokens, completionTokens, totalTokens)
 	pp.sendLog("monitor_upstream_completed", map[string]interface{}{
 		"response_mode":        "non_stream",
 		"final_text":           truncateString(outputContent, 2000),
@@ -581,6 +581,7 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 			requestID,
 			currentRequestPromptTokens,
 			currentRequestCompletionTokens,
+			currentRequestTotalTokens,
 			conversationTotal,
 			dailyTotal,
 		)
@@ -883,6 +884,7 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 				requestID,
 				promptTokens,
 				completionTokens,
+				totalTokens,
 				conversationTotal,
 				dailyTotal,
 			)
@@ -900,6 +902,25 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 			})
 		}
 		streamBuffer.mu.Unlock()
+
+		if len(generatedToolCalls) == 0 && strings.TrimSpace(outputContent) != "" {
+			finalPolicyResult := pp.runFinalResultPolicyHooks(ctx, finalResultPolicyContext{
+				RequestID: requestID,
+				Content:   outputContent,
+			})
+			if finalPolicyResult.Handled && finalPolicyResult.Decision != nil {
+				if !finalPolicyResult.Pass {
+					choice.Delta.ToolCalls = nil
+					choice.Delta.Content = pp.formatPolicySecurityMessage(*finalPolicyResult.Decision)
+					choice.FinishReason = "stop"
+					return pp.applyResponseSecurityPolicyDecision(ctx, requestID, *finalPolicyResult.Decision, true)
+				}
+				if finalPolicyResult.Mutated {
+					outputContent = finalPolicyResult.Content
+					pp.recordFinalResultPolicyEvent(requestID, *finalPolicyResult.Decision)
+				}
+			}
+		}
 		logging.Info(
 			"[AuditChain] response observed: request_id=%s mode=stream finish_reason=%s tool_calls=%d output_len=%d",
 			requestID,
@@ -908,7 +929,7 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 			len(strings.TrimSpace(outputContent)),
 		)
 		pp.auditLogSafe("update_tokens_on_stream_finish", func(tracker *AuditChainTracker) {
-			tracker.UpdateRequestTokens(requestID, promptTokens, completionTokens)
+			tracker.UpdateRequestTokens(requestID, promptTokens, completionTokens, totalTokens)
 		})
 		if len(generatedToolCalls) == 0 {
 			logging.Info(
@@ -927,7 +948,7 @@ func (pp *ProxyProtection) onStreamChunk(ctx context.Context, chunk *openai.Chat
 			)
 		}
 
-		pp.finalizeTruthRecord(requestID, outputContent, generatedToolCalls, promptTokens, completionTokens)
+		pp.finalizeTruthRecord(requestID, outputContent, generatedToolCalls, promptTokens, completionTokens, totalTokens)
 		pp.sendLog("monitor_upstream_completed", map[string]interface{}{
 			"response_mode":        "stream",
 			"final_text":           truncateString(outputContent, 2000),
