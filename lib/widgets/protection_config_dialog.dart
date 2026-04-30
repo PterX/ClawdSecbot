@@ -1201,6 +1201,7 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
         (isRuntimeMacOS && BuildConfig.isPersonal) ||
         isRuntimeLinux ||
         isRuntimeWindows;
+    final canBrowsePathPermission = !isRuntimeWeb;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(8),
@@ -1240,7 +1241,9 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
                     },
                     onRemove: (index) =>
                         setState(() => _pathList.removeAt(index)),
-                    onBrowse: () => _handlePathBrowse(l10n),
+                    onBrowse: canBrowsePathPermission
+                        ? () => _handlePathBrowse(l10n)
+                        : null,
                   ),
                   const SizedBox(height: 20),
 
@@ -1876,6 +1879,13 @@ class _ProtectionConfigDialogState extends State<ProtectionConfigDialog>
   }
 
   Future<void> _handlePathBrowse(AppLocalizations l10n) async {
+    if (isRuntimeWeb) {
+      appLogger.info(
+        '[ProtectionConfig] Skip path picker in WebUI; service paths must be entered manually.',
+      );
+      return;
+    }
+
     try {
       final result = await FilePicker.platform.getDirectoryPath(
         dialogTitle: l10n.pathPermissionTitle,
