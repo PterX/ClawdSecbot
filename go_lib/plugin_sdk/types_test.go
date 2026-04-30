@@ -51,6 +51,13 @@ func TestAssetUISchemaClone(t *testing.T) {
 	}
 }
 
+func TestAssetUISchemaCloneNil(t *testing.T) {
+	var schema *AssetUISchema
+	if schema.Clone() != nil {
+		t.Fatal("Expected nil schema clone to remain nil")
+	}
+}
+
 func TestBuildInstanceIDNormalizesAndHashesInstanceHints(t *testing.T) {
 	instanceA := BuildInstanceID(
 		"com.example.plugin",

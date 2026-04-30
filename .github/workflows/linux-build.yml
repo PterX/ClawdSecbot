@@ -6,19 +6,42 @@ on:
     paths:
       - 'go_lib/**'
       - 'lib/**'
+      - 'test/**'
       - 'linux/**'
       - 'images/**'
       - 'pubspec.yaml'
+      - 'analysis_options.yaml'
   pull_request:
     branches: [main]
     paths:
       - 'go_lib/**'
       - 'lib/**'
+      - 'test/**'
       - 'linux/**'
       - 'images/**'
       - 'pubspec.yaml'
+      - 'analysis_options.yaml'
 
 jobs:
+  test-flutter:
+    name: Flutter Test & Analyze (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run Flutter unit tests
+        run: flutter test --coverage
+
   build-go:
     name: Go Build & Test (Linux)
     runs-on: ubuntu-latest
@@ -40,7 +63,7 @@ jobs:
       - name: Run Go tests
         working-directory: go_lib
         run: |
-          go test -count=1 -timeout 120s ./...
+          go test -race -v -count=1 -timeout 300s ./...
 
       - name: Upload shared library artifact
         uses: actions/upload-artifact@v4
@@ -70,7 +93,7 @@ jobs:
   build-flutter:
     name: Flutter Build (Linux)
     runs-on: ubuntu-latest
-    needs: [build-go, build-sandbox-preload]
+    needs: [build-go, build-sandbox-preload, test-flutter]
     steps:
       - uses: actions/checkout@v4
 

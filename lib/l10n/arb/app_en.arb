@@ -773,6 +773,10 @@
   "analysisPromptTokens": "Analysis Prompt Tokens",
   "analysisCompletionTokens": "Analysis Completion Tokens",
   "analysisTokenTooltip": "Token consumption from security analysis (not included in main business flow)",
+  "analysisCountTooltip": "Times the security model analyzed tool calls / tool results; ordinary chat does not trigger analysis",
+  "messageCountTooltip": "Requests successfully forwarded to the upstream Bot; daily-token-quota rejections are excluded",
+  "warningCountTooltip": "NEEDS_CONFIRMATION decisions: not blocked, user is asked to confirm the risk",
+  "blockedCountTooltip": "BLOCK decisions: request is rejected outright and never reaches the upstream Bot",
 
   "protectionConfigTitle": "Protection Config",
   "securityPromptTab": "Smart Rules",
