@@ -299,6 +299,16 @@ build_sandbox_preload() {
 
 # 执行公共构建流程，只构建一次供 DEB/RPM 复用。
 build_release_bundle() {
+    local flutter_defines=(
+        "--dart-define=BUILD_TYPE=$PACKAGE_TYPE"
+    )
+
+    if [[ "$PACKAGE_TYPE" == "appstore" ]]; then
+        flutter_defines+=("--dart-define=BUILD_VARIANT=appstore")
+    else
+        flutter_defines+=("--dart-define=BUILD_VARIANT=personal")
+    fi
+
     log_info "Running flutter clean"
     flutter clean
 
@@ -310,7 +320,12 @@ build_release_bundle() {
     flutter pub get
 
     log_info "Building flutter linux release bundle"
-    flutter build linux --release --no-tree-shake-icons
+    flutter build linux --release --no-tree-shake-icons "${flutter_defines[@]}"
+
+    if [[ "$PACKAGE_TYPE" == "appstore" ]]; then
+        ok "Desktop release bundle built"
+        return
+    fi
 
     log_info "Building flutter web release bundle"
     flutter build web \
@@ -539,7 +554,8 @@ copy_uos_application_files() {
 #!/bin/bash
 set -e
 APP_DIR="/opt/apps/$APPSTORE_APP_ID/files"
-POLICY_DIR="\$HOME/.botsec/policies"
+DATA_HOME="\${XDG_DATA_HOME:-\$HOME/.local/share}"
+POLICY_DIR="\$DATA_HOME/$PACKAGE_NAME/policies"
 export LD_LIBRARY_PATH="\$APP_DIR/lib:\${LD_LIBRARY_PATH:-}"
 if [ -f "\$APP_DIR/libsandbox_preload.so" ]; then
     mkdir -p "\$POLICY_DIR"
@@ -763,7 +779,7 @@ build_uos_deb_package() {
     "autostart": false,
     "notification": false,
     "trayicon": true,
-    "clipboard": false,
+    "clipboard": true,
     "account": false,
     "bluetooth": false,
     "camera": false,

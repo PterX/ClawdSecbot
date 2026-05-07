@@ -2,6 +2,7 @@ package core
 
 import (
 	"bufio"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -110,7 +111,13 @@ func (c *platformCollector) getRunningProcesses() ([]SystemProcess, error) {
 }
 
 // getServices 使用 systemctl 获取用户级服务列表
+// 在无 systemd 的容器或精简镜像中通常没有 systemctl，此时跳过枚举并返回空列表（不影响端口/进程类规则）
 func (c *platformCollector) getServices() ([]string, error) {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		logging.Debug("systemctl not in PATH, skip user service enumeration: %v", err)
+		return []string{}, nil
+	}
+
 	logging.Debug("开始执行 systemctl 命令获取用户级服务列表...")
 	// systemctl --user list-units --type=service --all --no-pager --no-legend
 	cmd := cmdutil.Command("systemctl", "--user", "list-units", "--type=service", "--all", "--no-pager", "--no-legend")
