@@ -63,10 +63,10 @@ Options:
 
 Examples:
   ./scripts/build_linux_release.sh
-  ./scripts/build_linux_release.sh -v 1.3.0 -bn 202603230900 -ar x86_64
-  ./scripts/build_linux_release.sh --deb -v 1.3.0 -ar amd64
-  ./scripts/build_linux_release.sh --rpm -v 1.3.0 -t business -br acme -ar arm64
-  ./scripts/build_linux_release.sh --deb -t appstore -v 1.3.0 -ar amd64
+  ./scripts/build_linux_release.sh -v 1.0.0 -bn 202603230900 -ar x86_64
+  ./scripts/build_linux_release.sh --deb -v 1.0.0 -ar amd64
+  ./scripts/build_linux_release.sh --rpm -v 1.0.0 -t business -br acme -ar arm64
+  ./scripts/build_linux_release.sh --deb -t appstore -v 1.0.0 -ar amd64
 EOF
 }
 
@@ -524,6 +524,39 @@ prepare_uos_rootfs_layout() {
     mkdir -p "$app_root/files/bin"
 }
 
+# 将 libappindicator3 打入 UOS 包内 lib 目录，避免商店包禁止 postinst 写 /usr/lib 时 tray 无法解析 SONAME。
+bundle_uos_libappindicator() {
+    local lib_dir="$1"
+    local appind_path ayatana_path real_path
+
+    mkdir -p "$lib_dir"
+    if [[ -e "$lib_dir/libappindicator3.so.1" ]]; then
+        ok "UOS bundle: libappindicator3.so.1 already in bundle lib, skip compat copy"
+        return 0
+    fi
+
+    appind_path=$(ldconfig -p 2>/dev/null | grep 'libappindicator3\.so\.1 ' | head -1 | sed 's/.*=> //' | tr -d ' ')
+    if [[ -n "$appind_path" && -e "$appind_path" ]]; then
+        real_path=$(readlink -f "$appind_path")
+        cp -a "$real_path" "$lib_dir/"
+        ln -sf "$(basename "$real_path")" "$lib_dir/libappindicator3.so.1"
+        ok "UOS bundle: shipped libappindicator3 from $real_path"
+        return 0
+    fi
+
+    ayatana_path=$(ldconfig -p 2>/dev/null | grep 'libayatana-appindicator3\.so\.1 ' | head -1 | sed 's/.*=> //' | tr -d ' ')
+    if [[ -n "$ayatana_path" && -e "$ayatana_path" ]]; then
+        real_path=$(readlink -f "$ayatana_path")
+        cp -a "$real_path" "$lib_dir/"
+        ln -sf "$(basename "$real_path")" "$lib_dir/libayatana-appindicator3.so.1"
+        ln -sf libayatana-appindicator3.so.1 "$lib_dir/libappindicator3.so.1"
+        ok "UOS bundle: libappindicator3.so.1 -> libayatana-appindicator3 (from $real_path)"
+        return 0
+    fi
+
+    warn "UOS bundle: libappindicator3 / libayatana-appindicator not found in ldconfig; tray may fail on minimal hosts"
+}
+
 # 将桌面应用文件复制到 UOS 私有应用目录。
 copy_uos_application_files() {
     local bundle_dir="$PROJECT_ROOT/build/linux/$FLUTTER_ARCH/release/bundle"
@@ -534,6 +567,8 @@ copy_uos_application_files() {
 
     [[ -d "$bundle_dir" ]] || fail "Flutter bundle not found: $bundle_dir"
     cp -a "$bundle_dir"/. "$files_dir/"
+
+    bundle_uos_libappindicator "$files_dir/lib"
 
     if [[ -d "$plugins_dir" ]]; then
         mkdir -p "$files_dir/plugins"
