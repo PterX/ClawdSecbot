@@ -9,6 +9,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
   }
 
   List<_RawMessageItem> _buildRawMessagesWithToolFallback(AuditLog log) {
+    final l10n = AppLocalizations.of(context)!;
     final nonSystemMessages =
         log.messages.where((msg) => msg.role.toLowerCase() != 'system').toList()
           ..sort((a, b) => a.index.compareTo(b.index));
@@ -40,7 +41,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
           : 'Unknown';
       final content = msg.content.trim().isNotEmpty
           ? msg.content.trim()
-          : (_isZh ? '(空内容)' : '(empty content)');
+          : (l10n.auditLogContentEmptyPlaceholder);
       timeline.add(_RawMessageItem(roleLabel: roleLabel, content: content));
     }
 
@@ -82,15 +83,13 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
   }
 
   String _buildToolCallRaw(AuditToolCall tc) {
+    final l10n = AppLocalizations.of(context)!;
     final args = tc.arguments.trim().isNotEmpty ? tc.arguments.trim() : '{}';
-    if (_isZh) {
-      return '工具调用: ${tc.name}\n参数:\n$args';
-    }
-    return 'Tool call: ${tc.name}\nArguments:\n$args';
+    return l10n.auditLogToolCallRawLine(tc.name, args);
   }
 
   Widget _buildLogDetail() {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     final log = _selectedLog!;
     final rawMessages = _buildRawMessagesWithToolFallback(log);
 
@@ -114,7 +113,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
             child: Row(
               children: [
                 Text(
-                  l10n?.auditLogDetail ?? 'Log Detail',
+                  l10n.auditLogDetail,
                   style: AppFonts.inter(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -123,7 +122,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
                 ),
                 const Spacer(),
                 Tooltip(
-                  message: l10n?.auditLogExport ?? 'Export',
+                  message: l10n.auditLogExport,
                   child: IconButton(
                     icon: const Icon(LucideIcons.download, size: 16),
                     color: Colors.white54,
@@ -144,46 +143,46 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildDetailRow(l10n?.auditLogId ?? 'ID', log.id),
+                  _buildDetailRow(l10n.auditLogId, log.id),
                   _buildDetailRow(
-                    l10n?.auditLogTimestamp ?? 'Timestamp',
+                    l10n.auditLogTimestamp,
                     _formatTimestamp(log.timestamp),
                   ),
                   _buildDetailRow(
-                    l10n?.auditLogRequestId ?? 'Request ID',
+                    l10n.auditLogRequestId,
                     log.requestId,
                   ),
                   if (log.model != null)
-                    _buildDetailRow(l10n?.auditLogModel ?? 'Model', log.model!),
+                    _buildDetailRow(l10n.auditLogModel, log.model!),
                   _buildDetailRow(
-                    l10n?.auditLogAction ?? 'Action',
+                    l10n.auditLogAction,
                     _getActionText(log.action),
                   ),
                   if (log.hasRisk) ...[
                     _buildDetailRow(
-                      l10n?.auditLogRiskLevel ?? 'Risk Level',
+                      l10n.auditLogRiskLevel,
                       log.riskLevel ?? 'N/A',
                     ),
                     _buildDetailRow(
-                      l10n?.auditLogRiskReason ?? 'Risk Reason',
+                      l10n.auditLogRiskReason,
                       log.riskReason ?? 'N/A',
                     ),
                   ],
                   _buildDetailRow(
-                    l10n?.auditLogDuration ?? 'Duration',
+                    l10n.auditLogDuration,
                     '${log.durationMs}ms',
                   ),
                   if (log.totalTokens != null)
                     _buildDetailRow(
-                      l10n?.auditLogTokens ?? 'Tokens',
+                      l10n.auditLogTokens,
                       '${log.totalTokens}',
                     ),
 
                   const SizedBox(height: 16),
                   _buildSectionTitleWithCopy(
-                    _isZh
-                        ? '原始${rawMessages.isNotEmpty ? " (${rawMessages.length})" : ""}'
-                        : 'Raw${rawMessages.isNotEmpty ? " (${rawMessages.length})" : ""}',
+                    rawMessages.isNotEmpty
+                        ? l10n.auditLogSectionRawWithCount(rawMessages.length)
+                        : l10n.auditLogSectionRaw,
                     _buildRawSectionText(log),
                   ),
                   if (rawMessages.isNotEmpty) ...[
@@ -217,9 +216,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
                   if (log.toolCalls.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _buildSectionTitleWithCopy(
-                      _isZh
-                          ? '动作 (${log.toolCalls.length})'
-                          : 'Actions (${log.toolCalls.length})',
+                      l10n.auditLogSectionActionsWithCount(log.toolCalls.length),
                       _buildActionSectionText(log),
                     ),
                     ...log.toolCalls.map((tc) => _buildToolCallItem(tc)),
@@ -227,9 +224,11 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
 
                   const SizedBox(height: 16),
                   _buildSectionTitleWithCopy(
-                    _isZh
-                        ? '事件${_relatedEvents.isNotEmpty ? " (${_relatedEvents.length})" : ""}'
-                        : 'Events${_relatedEvents.isNotEmpty ? " (${_relatedEvents.length})" : ""}',
+                    _relatedEvents.isNotEmpty
+                        ? l10n.auditLogSectionEventsWithCount(
+                            _relatedEvents.length,
+                          )
+                        : l10n.auditLogSectionEventsHeading,
                     _relatedEvents.isNotEmpty
                         ? _buildEventSectionText(_relatedEvents)
                         : '',
@@ -240,7 +239,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        _isZh ? '暂无关联安全事件' : 'No related security events',
+                        l10n.auditLogNoRelatedSecurityEvents,
                         style: AppFonts.inter(
                           fontSize: 12,
                           color: Colors.white38,
@@ -258,15 +257,16 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
 
   /// Builds one security event card.
   Widget _buildSecurityEventCard(SecurityEvent evt) {
+    final l10n = AppLocalizations.of(context)!;
     final blocked = evt.isBlocked;
     final accent = blocked ? Colors.red : Colors.amber;
     final typeLabel = switch (evt.eventType) {
-      'blocked' => _isZh ? '已拦截' : 'Blocked',
-      'needs_confirmation' => _isZh ? '待确认' : 'Needs Confirmation',
-      'tool_execution' => _isZh ? '工具执行' : 'Tool Execution',
+      'blocked' => l10n.auditLogEventBadgeBlocked,
+      'needs_confirmation' => l10n.auditLogEventBadgeNeedsConfirmation,
+      'tool_execution' => l10n.auditLogEventBadgeToolExecution,
       _ => localizeSecurityEventType(
         evt.eventType,
-        AppLocalizations.of(context)!,
+        l10n,
       ),
     };
     return Container(
@@ -309,7 +309,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
                   child: Text(
                     localizeSecurityRiskType(
                       evt.riskType,
-                      AppLocalizations.of(context)!,
+                      l10n,
                     ),
                     style: AppFonts.firaCode(
                       fontSize: 10,
@@ -330,7 +330,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
           SelectableText(
             localizeSecurityActionDesc(
               evt.actionDesc,
-              AppLocalizations.of(context)!,
+              l10n,
             ),
             style: AppFonts.inter(fontSize: 11, color: Colors.white70),
           ),
@@ -347,16 +347,16 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
   }
 
   String _getActionText(String action) {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     switch (action.toUpperCase()) {
       case 'BLOCK':
       case 'HARD_BLOCK':
-        return l10n?.auditLogActionBlock ?? 'Blocked';
+        return l10n.auditLogActionBlock;
       case 'WARN':
-        return l10n?.auditLogActionWarn ?? 'Risk';
+        return l10n.auditLogActionWarn;
       case 'ALLOW':
       default:
-        return l10n?.auditLogActionAllow ?? 'Allowed';
+        return l10n.auditLogActionAllow;
     }
   }
 
@@ -385,7 +385,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
   }
 
   Widget _buildSectionTitleWithCopy(String title, String copyText) {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -402,7 +402,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
           IconButton(
             icon: const Icon(LucideIcons.copy, size: 16),
             color: Colors.white54,
-            tooltip: l10n?.appStoreGuideCopy ?? '复制',
+            tooltip: l10n.appStoreGuideCopy,
             onPressed: () => _copyText(copyText),
           ),
         ],
@@ -424,9 +424,6 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
       ),
     );
   }
-
-  bool get _isZh =>
-      (AppLocalizations.of(context)?.localeName ?? '').startsWith('zh');
 
   _RawTimelineStyle _rawTimelineStyleForRole(String roleLabel) {
     switch (roleLabel.toLowerCase()) {
@@ -466,14 +463,15 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
     required int index,
     required int total,
   }) {
+    final l10n = AppLocalizations.of(context)!;
     if (index == 0) {
-      return _isZh ? '开始' : 'Start';
+      return l10n.auditLogTimelineStart;
     }
     if (index == total - 1) {
-      return _isZh ? '结束' : 'End';
+      return l10n.auditLogTimelineEnd;
     }
     if (log.durationMs <= 0 || total <= 1) {
-      return _isZh ? '步骤 ${index + 1}' : 'Step ${index + 1}';
+      return l10n.auditLogTimelineStep(index + 1);
     }
     final offsetMs = ((log.durationMs * index) / (total - 1)).round();
     if (offsetMs >= 1000) {
@@ -610,7 +608,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
   }
 
   Widget _buildToolCallItem(AuditToolCall tc) {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -656,7 +654,7 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    l10n?.auditLogSensitive ?? 'SENSITIVE',
+                    l10n.auditLogSensitive,
                     style: AppFonts.firaCode(fontSize: 9, color: Colors.red),
                   ),
                 ),
@@ -668,14 +666,14 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
             Row(
               children: [
                 Text(
-                  '${l10n?.auditLogToolArguments ?? "Arguments"}:',
+                  '${l10n.auditLogToolArguments}:',
                   style: AppFonts.inter(fontSize: 10, color: Colors.white54),
                 ),
                 const SizedBox(width: 6),
                 IconButton(
                   icon: const Icon(LucideIcons.copy, size: 14),
                   color: Colors.white54,
-                  tooltip: l10n?.appStoreGuideCopy ?? '复制',
+                  tooltip: l10n.appStoreGuideCopy,
                   onPressed: () => _copyText(tc.arguments),
                 ),
               ],
@@ -688,14 +686,14 @@ extension _AuditLogPageDetailExt on _AuditLogPageState {
             Row(
               children: [
                 Text(
-                  '${l10n?.auditLogToolResult ?? "Result"}:',
+                  '${l10n.auditLogToolResult}:',
                   style: AppFonts.inter(fontSize: 10, color: Colors.white54),
                 ),
                 const SizedBox(width: 6),
                 IconButton(
                   icon: const Icon(LucideIcons.copy, size: 14),
                   color: Colors.white54,
-                  tooltip: l10n?.appStoreGuideCopy ?? '复制',
+                  tooltip: l10n.appStoreGuideCopy,
                   onPressed: () => _copyText(tc.result!),
                 ),
               ],

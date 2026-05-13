@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import '../l10n/app_localizations.dart';
 import '../pages/audit_log_page.dart';
 import '../utils/app_fonts.dart';
 import '../utils/app_logger.dart';
+import '../utils/locale_utils.dart';
 import '../utils/window_animation_helper.dart';
 import '../widgets/hide_window_shortcut.dart';
 
@@ -39,11 +41,39 @@ class AuditLogWindowApp extends StatefulWidget {
 
 class _AuditLogWindowAppState extends State<AuditLogWindowApp> {
   bool _isWindowShown = false;
+  late String _locale;
 
   @override
   void initState() {
     super.initState();
+    _locale = LocaleUtils.normalizeLanguageCode(widget.locale);
+    _registerWindowMethodHandler();
     _showWindowAfterFirstFrame();
+  }
+
+  /// 注册与主窗口通信：接收主界面语言切换并更新 [MaterialApp.locale]。
+  void _registerWindowMethodHandler() {
+    WindowController.fromCurrentEngine().then((controller) {
+      controller.setWindowMethodHandler((call) async {
+        if (call.method == 'updateLanguage') {
+          final language = LocaleUtils.normalizeLanguageCode(
+            call.arguments?.toString(),
+          );
+          try {
+            appLogger.info('[AuditLogWindow] Received updateLanguage: $language');
+            if (!mounted) {
+              return null;
+            }
+            setState(() {
+              _locale = language;
+            });
+          } catch (e) {
+            appLogger.error('[AuditLogWindow] Failed to update language', e);
+          }
+        }
+        return null;
+      });
+    });
   }
 
   /// Show audit window after first frame to reduce startup flicker.
@@ -60,8 +90,7 @@ class _AuditLogWindowAppState extends State<AuditLogWindowApp> {
     required String fileName,
     required String content,
   }) async {
-    final isZh = widget.locale.toLowerCase().startsWith('zh');
-    final outputPath = await _resolveExportPath(fileName: fileName, isZh: isZh);
+    final outputPath = await _resolveExportPath(fileName: fileName);
     if (outputPath == null || outputPath.trim().isEmpty) {
       return null;
     }
@@ -76,12 +105,12 @@ class _AuditLogWindowAppState extends State<AuditLogWindowApp> {
 
   Future<String?> _resolveExportPath({
     required String fileName,
-    required bool isZh,
   }) async {
+    final l10n = lookupAppLocalizations(Locale(_locale));
     final normalizedFileName = _ensureMarkdownExtension(fileName.trim());
     try {
       final savePath = await FilePicker.platform.saveFile(
-        dialogTitle: isZh ? '选择导出位置' : 'Choose export location',
+        dialogTitle: l10n.auditLogExportDialogTitle,
         fileName: normalizedFileName,
         type: FileType.custom,
         allowedExtensions: const ['md'],
@@ -147,10 +176,11 @@ class _AuditLogWindowAppState extends State<AuditLogWindowApp> {
 
   @override
   Widget build(BuildContext context) {
+    final windowL10n = lookupAppLocalizations(Locale(_locale));
     return MaterialApp(
-      title: 'Audit Log',
+      title: windowL10n.auditLogTitle,
       debugShowCheckedModeBanner: false,
-      locale: Locale(widget.locale),
+      locale: Locale(_locale),
       localizationsDelegates: const [
         AppLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,

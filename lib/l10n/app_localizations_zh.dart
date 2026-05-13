@@ -18,7 +18,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get exit => '退出';
 
   @override
-  String get idleTitle => 'ClawdSecbot 安全卫士';
+  String get idleTitle => 'ClawdSecbot 龙虾卫士';
 
   @override
   String get idleSubtitle => '扫描您的 Clawdbot 配置以查找安全风险';
@@ -1485,6 +1485,138 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get auditLogClear => '清空';
+
+  @override
+  String auditLogClearTabConfirmMessage(String tab) {
+    return '确定要清空当前标签页「$tab」的审计日志吗？此操作无法撤销。';
+  }
+
+  @override
+  String get auditLogExportNotAvailable => '当前环境暂不支持文件导出，请在桌面端操作。';
+
+  @override
+  String get auditLogExportDialogTitle => '选择导出位置';
+
+  @override
+  String get auditLogMarkdownBatchHeading => '# 审计日志批量导出';
+
+  @override
+  String auditLogMarkdownBatchCountLine(int count) {
+    return '- 导出条数: $count';
+  }
+
+  @override
+  String auditLogMarkdownBatchTimeLine(String time) {
+    return '- 导出时间: $time';
+  }
+
+  @override
+  String auditLogExportBatchSuccess(int count, String path) {
+    return '已批量导出 $count 条日志到 $path';
+  }
+
+  @override
+  String auditLogExportSingleSuccess(String path) {
+    return '已导出到 $path';
+  }
+
+  @override
+  String auditLogExportFailedWithReason(String reason) {
+    return '导出失败: $reason';
+  }
+
+  @override
+  String auditLogTooltipExportSelected(int count) {
+    return '批量导出已选日志（$count）';
+  }
+
+  @override
+  String auditLogSelectedBadge(int count) {
+    return '已选 $count 条';
+  }
+
+  @override
+  String auditLogPaginationSummary(int total, int latest) {
+    return '共 $total 条，最新 $latest 条';
+  }
+
+  @override
+  String get auditLogFilterAllBots => '全部 Bot';
+
+  @override
+  String auditLogToolCallsCount(int count) {
+    return '$count 次工具调用';
+  }
+
+  @override
+  String get auditLogContentEmptyPlaceholder => '(空内容)';
+
+  @override
+  String get auditLogSectionRaw => '原始';
+
+  @override
+  String auditLogSectionRawWithCount(int count) {
+    return '原始 ($count)';
+  }
+
+  @override
+  String auditLogSectionActionsWithCount(int count) {
+    return '动作 ($count)';
+  }
+
+  @override
+  String auditLogSectionEventsWithCount(int count) {
+    return '事件 ($count)';
+  }
+
+  @override
+  String get auditLogSectionEventsHeading => '事件';
+
+  @override
+  String get auditLogNoRelatedSecurityEvents => '暂无关联安全事件';
+
+  @override
+  String get auditLogEventBadgeBlocked => '已拦截';
+
+  @override
+  String get auditLogEventBadgeNeedsConfirmation => '待确认';
+
+  @override
+  String get auditLogEventBadgeToolExecution => '工具执行';
+
+  @override
+  String auditLogToolCallRawLine(String name, String args) {
+    return '工具调用: $name\n参数:\n$args';
+  }
+
+  @override
+  String get auditLogTimelineStart => '开始';
+
+  @override
+  String get auditLogTimelineEnd => '结束';
+
+  @override
+  String auditLogTimelineStep(int step) {
+    return '步骤 $step';
+  }
+
+  @override
+  String get auditLogMarkdownDetailExportTitle => '审计日志详情导出';
+
+  @override
+  String get auditLogMarkdownSectionMeta => '## 元数据';
+
+  @override
+  String get auditLogMarkdownSectionRaw => '## 原始';
+
+  @override
+  String get auditLogMarkdownSectionActions => '## 动作';
+
+  @override
+  String get auditLogMarkdownSectionEvents => '## 事件';
+
+  @override
+  String get auditLogMarkdownNoRelatedEventsBody => '暂无关联安全事件';
 
   @override
   String get auditLogDetail => '日志详情';

@@ -1,3 +1,5 @@
+import 'package:bot_sec_manager/l10n/app_localizations_en.dart';
+import 'package:bot_sec_manager/l10n/app_localizations_zh.dart';
 import 'package:bot_sec_manager/models/audit_log_model.dart';
 import 'package:bot_sec_manager/models/security_event_model.dart';
 import 'package:bot_sec_manager/utils/audit_log_export_helper.dart';
@@ -25,7 +27,7 @@ void main() {
   group('buildAuditLogMarkdownContent', () {
     test('generates markdown with all sections for Chinese locale', () {
       final md = buildAuditLogMarkdownContent(
-        isZh: true,
+        l10n: AppLocalizationsZh(),
         log: buildLog(),
         relatedEvents: [],
         rawText: 'raw content',
@@ -34,7 +36,7 @@ void main() {
       );
 
       expect(md, contains('# 审计日志详情导出'));
-      expect(md, contains('## Meta'));
+      expect(md, contains('## 元数据'));
       expect(md, contains('log-001'));
       expect(md, contains('req-001'));
       expect(md, contains('openclaw'));
@@ -50,7 +52,7 @@ void main() {
 
     test('generates markdown with English locale', () {
       final md = buildAuditLogMarkdownContent(
-        isZh: false,
+        l10n: AppLocalizationsEn(),
         log: buildLog(),
         relatedEvents: [],
         rawText: 'raw',
@@ -67,7 +69,7 @@ void main() {
 
     test('includes related events when provided', () {
       final md = buildAuditLogMarkdownContent(
-        isZh: false,
+        l10n: AppLocalizationsEn(),
         log: buildLog(),
         relatedEvents: [
           SecurityEvent(
@@ -90,7 +92,7 @@ void main() {
 
     test('escapes triple backticks in content', () {
       final md = buildAuditLogMarkdownContent(
-        isZh: false,
+        l10n: AppLocalizationsEn(),
         log: buildLog(),
         relatedEvents: [],
         rawText: 'code: ```block```',
@@ -104,7 +106,7 @@ void main() {
 
     test('normalizes line endings', () {
       final md = buildAuditLogMarkdownContent(
-        isZh: false,
+        l10n: AppLocalizationsEn(),
         log: buildLog(),
         relatedEvents: [],
         rawText: 'line1\r\nline2\rline3',

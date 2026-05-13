@@ -391,6 +391,24 @@ mixin MainPageWindowMixin on State<MainPage>, WindowListener {
     }
   }
 
+  /// 向审计日志子窗口同步主界面语言（与 [notifyMonitorWindowsLanguageUpdate] 一致）。
+  Future<void> notifyAuditLogWindowLanguageUpdate(String language) async {
+    final controller = auditLogWindow;
+    if (controller == null) {
+      return;
+    }
+    try {
+      await controller.invokeMethod('updateLanguage', language);
+      appLogger.info(
+        '[MainPage] Sent updateLanguage to audit log window ${controller.windowId}',
+      );
+    } catch (e) {
+      appLogger.warning(
+        '[MainPage] Failed to update language for audit log window: $e',
+      );
+    }
+  }
+
   Future<void> notifyMonitorWindowsProtectionConfigReload() async {
     for (final controller in protectionMonitorWindows.values) {
       try {

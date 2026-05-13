@@ -119,7 +119,7 @@ abstract class AppLocalizations {
   /// No description provided for @idleTitle.
   ///
   /// In zh, this message translates to:
-  /// **'ClawdSecbot 安全卫士'**
+  /// **'ClawdSecbot 龙虾卫士'**
   String get idleTitle;
 
   /// No description provided for @idleSubtitle.
@@ -2667,6 +2667,210 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'清空'**
   String get auditLogClear;
+
+  /// No description provided for @auditLogClearTabConfirmMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定要清空当前标签页「{tab}」的审计日志吗？此操作无法撤销。'**
+  String auditLogClearTabConfirmMessage(String tab);
+
+  /// No description provided for @auditLogExportNotAvailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前环境暂不支持文件导出，请在桌面端操作。'**
+  String get auditLogExportNotAvailable;
+
+  /// No description provided for @auditLogExportDialogTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择导出位置'**
+  String get auditLogExportDialogTitle;
+
+  /// No description provided for @auditLogMarkdownBatchHeading.
+  ///
+  /// In zh, this message translates to:
+  /// **'# 审计日志批量导出'**
+  String get auditLogMarkdownBatchHeading;
+
+  /// No description provided for @auditLogMarkdownBatchCountLine.
+  ///
+  /// In zh, this message translates to:
+  /// **'- 导出条数: {count}'**
+  String auditLogMarkdownBatchCountLine(int count);
+
+  /// No description provided for @auditLogMarkdownBatchTimeLine.
+  ///
+  /// In zh, this message translates to:
+  /// **'- 导出时间: {time}'**
+  String auditLogMarkdownBatchTimeLine(String time);
+
+  /// No description provided for @auditLogExportBatchSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'已批量导出 {count} 条日志到 {path}'**
+  String auditLogExportBatchSuccess(int count, String path);
+
+  /// No description provided for @auditLogExportSingleSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'已导出到 {path}'**
+  String auditLogExportSingleSuccess(String path);
+
+  /// No description provided for @auditLogExportFailedWithReason.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出失败: {reason}'**
+  String auditLogExportFailedWithReason(String reason);
+
+  /// No description provided for @auditLogTooltipExportSelected.
+  ///
+  /// In zh, this message translates to:
+  /// **'批量导出已选日志（{count}）'**
+  String auditLogTooltipExportSelected(int count);
+
+  /// No description provided for @auditLogSelectedBadge.
+  ///
+  /// In zh, this message translates to:
+  /// **'已选 {count} 条'**
+  String auditLogSelectedBadge(int count);
+
+  /// No description provided for @auditLogPaginationSummary.
+  ///
+  /// In zh, this message translates to:
+  /// **'共 {total} 条，最新 {latest} 条'**
+  String auditLogPaginationSummary(int total, int latest);
+
+  /// No description provided for @auditLogFilterAllBots.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部 Bot'**
+  String get auditLogFilterAllBots;
+
+  /// No description provided for @auditLogToolCallsCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 次工具调用'**
+  String auditLogToolCallsCount(int count);
+
+  /// No description provided for @auditLogContentEmptyPlaceholder.
+  ///
+  /// In zh, this message translates to:
+  /// **'(空内容)'**
+  String get auditLogContentEmptyPlaceholder;
+
+  /// No description provided for @auditLogSectionRaw.
+  ///
+  /// In zh, this message translates to:
+  /// **'原始'**
+  String get auditLogSectionRaw;
+
+  /// No description provided for @auditLogSectionRawWithCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'原始 ({count})'**
+  String auditLogSectionRawWithCount(int count);
+
+  /// No description provided for @auditLogSectionActionsWithCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'动作 ({count})'**
+  String auditLogSectionActionsWithCount(int count);
+
+  /// No description provided for @auditLogSectionEventsWithCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'事件 ({count})'**
+  String auditLogSectionEventsWithCount(int count);
+
+  /// No description provided for @auditLogSectionEventsHeading.
+  ///
+  /// In zh, this message translates to:
+  /// **'事件'**
+  String get auditLogSectionEventsHeading;
+
+  /// No description provided for @auditLogNoRelatedSecurityEvents.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无关联安全事件'**
+  String get auditLogNoRelatedSecurityEvents;
+
+  /// No description provided for @auditLogEventBadgeBlocked.
+  ///
+  /// In zh, this message translates to:
+  /// **'已拦截'**
+  String get auditLogEventBadgeBlocked;
+
+  /// No description provided for @auditLogEventBadgeNeedsConfirmation.
+  ///
+  /// In zh, this message translates to:
+  /// **'待确认'**
+  String get auditLogEventBadgeNeedsConfirmation;
+
+  /// No description provided for @auditLogEventBadgeToolExecution.
+  ///
+  /// In zh, this message translates to:
+  /// **'工具执行'**
+  String get auditLogEventBadgeToolExecution;
+
+  /// No description provided for @auditLogToolCallRawLine.
+  ///
+  /// In zh, this message translates to:
+  /// **'工具调用: {name}\n参数:\n{args}'**
+  String auditLogToolCallRawLine(String name, String args);
+
+  /// No description provided for @auditLogTimelineStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始'**
+  String get auditLogTimelineStart;
+
+  /// No description provided for @auditLogTimelineEnd.
+  ///
+  /// In zh, this message translates to:
+  /// **'结束'**
+  String get auditLogTimelineEnd;
+
+  /// No description provided for @auditLogTimelineStep.
+  ///
+  /// In zh, this message translates to:
+  /// **'步骤 {step}'**
+  String auditLogTimelineStep(int step);
+
+  /// No description provided for @auditLogMarkdownDetailExportTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'审计日志详情导出'**
+  String get auditLogMarkdownDetailExportTitle;
+
+  /// No description provided for @auditLogMarkdownSectionMeta.
+  ///
+  /// In zh, this message translates to:
+  /// **'## 元数据'**
+  String get auditLogMarkdownSectionMeta;
+
+  /// No description provided for @auditLogMarkdownSectionRaw.
+  ///
+  /// In zh, this message translates to:
+  /// **'## 原始'**
+  String get auditLogMarkdownSectionRaw;
+
+  /// No description provided for @auditLogMarkdownSectionActions.
+  ///
+  /// In zh, this message translates to:
+  /// **'## 动作'**
+  String get auditLogMarkdownSectionActions;
+
+  /// No description provided for @auditLogMarkdownSectionEvents.
+  ///
+  /// In zh, this message translates to:
+  /// **'## 事件'**
+  String get auditLogMarkdownSectionEvents;
+
+  /// No description provided for @auditLogMarkdownNoRelatedEventsBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无关联安全事件'**
+  String get auditLogMarkdownNoRelatedEventsBody;
 
   /// No description provided for @auditLogDetail.
   ///
