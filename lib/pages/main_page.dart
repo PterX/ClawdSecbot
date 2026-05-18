@@ -1524,6 +1524,7 @@ class _MainPageState extends State<MainPage>
       }
 
       await notifyMonitorWindowsLanguageUpdate(normalizedLanguage);
+      await notifyAuditLogWindowLanguageUpdate(normalizedLanguage);
     } catch (e) {
       appLogger.error('[MainPage] _applyProtectionLanguage error', e);
     }

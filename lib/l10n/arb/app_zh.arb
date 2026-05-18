@@ -3,7 +3,7 @@
   "appTitle": "ClawdSecbot",
   "showWindow": "显示窗口",
   "exit": "退出",
-  "idleTitle": "ClawdSecbot 安全卫士",
+  "idleTitle": "ClawdSecbot 龙虾卫士",
   "idleSubtitle": "扫描您的 Clawdbot 配置以查找安全风险",
   "startScan": "开始安全扫描",
   "scanning": "扫描中...",
@@ -915,6 +915,118 @@
   "auditLogClearConfirmMessage": "确定要清空所有审计日志吗？此操作无法撤销。",
   "auditLogCancel": "取消",
   "auditLogClear": "清空",
+  "auditLogClearTabConfirmMessage": "确定要清空当前标签页「{tab}」的审计日志吗？此操作无法撤销。",
+  "@auditLogClearTabConfirmMessage": {
+    "placeholders": {
+      "tab": {"type": "String"}
+    }
+  },
+  "auditLogExportNotAvailable": "当前环境暂不支持文件导出，请在桌面端操作。",
+  "auditLogExportDialogTitle": "选择导出位置",
+  "auditLogMarkdownBatchHeading": "# 审计日志批量导出",
+  "auditLogMarkdownBatchCountLine": "- 导出条数: {count}",
+  "@auditLogMarkdownBatchCountLine": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogMarkdownBatchTimeLine": "- 导出时间: {time}",
+  "@auditLogMarkdownBatchTimeLine": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "auditLogExportBatchSuccess": "已批量导出 {count} 条日志到 {path}",
+  "@auditLogExportBatchSuccess": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "path": {"type": "String"}
+    }
+  },
+  "auditLogExportSingleSuccess": "已导出到 {path}",
+  "@auditLogExportSingleSuccess": {
+    "placeholders": {
+      "path": {"type": "String"}
+    }
+  },
+  "auditLogExportFailedWithReason": "导出失败: {reason}",
+  "@auditLogExportFailedWithReason": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "auditLogTooltipExportSelected": "批量导出已选日志（{count}）",
+  "@auditLogTooltipExportSelected": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogSelectedBadge": "已选 {count} 条",
+  "@auditLogSelectedBadge": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogPaginationSummary": "共 {total} 条，最新 {latest} 条",
+  "@auditLogPaginationSummary": {
+    "placeholders": {
+      "total": {"type": "int"},
+      "latest": {"type": "int"}
+    }
+  },
+  "auditLogFilterAllBots": "全部 Bot",
+  "auditLogToolCallsCount": "{count} 次工具调用",
+  "@auditLogToolCallsCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogContentEmptyPlaceholder": "(空内容)",
+  "auditLogSectionRaw": "原始",
+  "auditLogSectionRawWithCount": "原始 ({count})",
+  "@auditLogSectionRawWithCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogSectionActionsWithCount": "动作 ({count})",
+  "@auditLogSectionActionsWithCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogSectionEventsWithCount": "事件 ({count})",
+  "@auditLogSectionEventsWithCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogSectionEventsHeading": "事件",
+  "auditLogNoRelatedSecurityEvents": "暂无关联安全事件",
+  "auditLogEventBadgeBlocked": "已拦截",
+  "auditLogEventBadgeNeedsConfirmation": "待确认",
+  "auditLogEventBadgeToolExecution": "工具执行",
+  "auditLogToolCallRawLine": "工具调用: {name}\n参数:\n{args}",
+  "@auditLogToolCallRawLine": {
+    "placeholders": {
+      "name": {"type": "String"},
+      "args": {"type": "String"}
+    }
+  },
+  "auditLogTimelineStart": "开始",
+  "auditLogTimelineEnd": "结束",
+  "auditLogTimelineStep": "步骤 {step}",
+  "@auditLogTimelineStep": {
+    "placeholders": {
+      "step": {"type": "int"}
+    }
+  },
+  "auditLogMarkdownDetailExportTitle": "审计日志详情导出",
+  "auditLogMarkdownSectionMeta": "## 元数据",
+  "auditLogMarkdownSectionRaw": "## 原始",
+  "auditLogMarkdownSectionActions": "## 动作",
+  "auditLogMarkdownSectionEvents": "## 事件",
+  "auditLogMarkdownNoRelatedEventsBody": "暂无关联安全事件",
   "auditLogDetail": "日志详情",
   "auditLogId": "日志 ID",
   "auditLogTimestamp": "时间",

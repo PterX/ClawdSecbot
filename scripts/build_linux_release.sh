@@ -10,6 +10,7 @@ NC='\033[0m'
 
 PACKAGE_NAME="clawdsecbot"
 APP_DISPLAY_NAME="ClawdSecbot"
+APPSTORE_APP_ID="com.clawdsecbot.guard"
 DESKTOP_TARGET="desktop"
 WEB_TARGET="web"
 WEB_PACKAGE_NAME="${PACKAGE_NAME}-web"
@@ -21,6 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 WORK_DIR="$PROJECT_ROOT/build/linux_packaging"
 ROOTFS_DIR="$WORK_DIR/rootfs"
+UOS_ROOTFS_DIR="$WORK_DIR/rootfs_uos"
 WEB_ROOTFS_DIR="$WORK_DIR/rootfs_web"
 WEB_BUILD_DIR="$WORK_DIR/web_build"
 SOURCE_ICON="$PROJECT_ROOT/scripts/icon_1024.png"
@@ -52,7 +54,7 @@ Options:
   -bn, --build <STAMP>       Build timestamp (default: current time, e.g. 202603230900)
        --build-number <STAMP>
   -ar, --arch <ARCH>         Target arch: x86_64|amd64|arm64
-  -t,  --type <TYPE>         Package type: community|business (default: community)
+  -t,  --type <TYPE>         Package type: community|business|appstore (default: community)
   -br, --brand <NAME>        Brand suffix, only allowed when type=business
   --deb                      Build DEB package only
   --rpm                      Build RPM package only
@@ -61,9 +63,10 @@ Options:
 
 Examples:
   ./scripts/build_linux_release.sh
-  ./scripts/build_linux_release.sh -v 1.3.0 -bn 202603230900 -ar x86_64
-  ./scripts/build_linux_release.sh --deb -v 1.3.0 -ar amd64
-  ./scripts/build_linux_release.sh --rpm -v 1.3.0 -t business -br acme -ar arm64
+  ./scripts/build_linux_release.sh -v 1.0.0 -bn 202603230900 -ar x86_64
+  ./scripts/build_linux_release.sh --deb -v 1.0.0 -ar amd64
+  ./scripts/build_linux_release.sh --rpm -v 1.0.0 -t business -br acme -ar arm64
+  ./scripts/build_linux_release.sh --deb -t appstore -v 1.0.0 -ar amd64
 EOF
 }
 
@@ -98,7 +101,7 @@ normalize_type() {
             echo "business"
             ;;
         appstore)
-            fail "Linux packages do not support type=appstore"
+            echo "appstore"
             ;;
         *)
             fail "Unsupported type: $raw_type"
@@ -151,6 +154,11 @@ build_artifact_name() {
         "$(artifact_type_segment)" \
         "$(artifact_brand_segment)" \
         "$extension"
+}
+
+# 输出 UOS 商店要求的四段纯数字版本号。
+uos_version() {
+    printf '%s.%s' "$VERSION" "$BUILD_NUMBER"
 }
 
 # 校验依赖命令是否可用。
@@ -223,6 +231,11 @@ parse_args() {
     if [[ "$PACKAGE_TYPE" != "business" && -n "$BRAND_NAME" ]]; then
         fail "brand is only allowed when type=business"
     fi
+    if [[ "$PACKAGE_TYPE" == "appstore" ]]; then
+        if [[ "$BUILD_MODE_EXPLICIT" != true || "$BUILD_DEB" != true || "$BUILD_RPM" == true ]]; then
+            fail "type=appstore only supports explicit --deb builds"
+        fi
+    fi
 }
 
 # 根据当前 CPU 架构推导 Flutter、DEB、RPM 所需架构名称。
@@ -286,6 +299,16 @@ build_sandbox_preload() {
 
 # 执行公共构建流程，只构建一次供 DEB/RPM 复用。
 build_release_bundle() {
+    local flutter_defines=(
+        "--dart-define=BUILD_TYPE=$PACKAGE_TYPE"
+    )
+
+    if [[ "$PACKAGE_TYPE" == "appstore" ]]; then
+        flutter_defines+=("--dart-define=BUILD_VARIANT=appstore")
+    else
+        flutter_defines+=("--dart-define=BUILD_VARIANT=personal")
+    fi
+
     log_info "Running flutter clean"
     flutter clean
 
@@ -297,7 +320,12 @@ build_release_bundle() {
     flutter pub get
 
     log_info "Building flutter linux release bundle"
-    flutter build linux --release --no-tree-shake-icons
+    flutter build linux --release --no-tree-shake-icons "${flutter_defines[@]}"
+
+    if [[ "$PACKAGE_TYPE" == "appstore" ]]; then
+        ok "Desktop release bundle built"
+        return
+    fi
 
     log_info "Building flutter web release bundle"
     flutter build web \
@@ -484,6 +512,144 @@ StartupWMClass=com.clawdsecbot.guard
 EOF
 }
 
+# 初始化统信 UOS 商店包的 /opt/apps 目录结构。
+prepare_uos_rootfs_layout() {
+    local app_root="$UOS_ROOTFS_DIR/opt/apps/$APPSTORE_APP_ID"
+
+    rm -rf "$UOS_ROOTFS_DIR"
+    mkdir -p "$app_root/entries/applications"
+    for size in 16 24 32 48 128 256 512; do
+        mkdir -p "$app_root/entries/icons/hicolor/${size}x${size}/apps"
+    done
+    mkdir -p "$app_root/files/bin"
+}
+
+# 将 libappindicator3 打入 UOS 包内 lib 目录，避免商店包禁止 postinst 写 /usr/lib 时 tray 无法解析 SONAME。
+bundle_uos_libappindicator() {
+    local lib_dir="$1"
+    local appind_path ayatana_path real_path
+
+    mkdir -p "$lib_dir"
+    if [[ -e "$lib_dir/libappindicator3.so.1" ]]; then
+        ok "UOS bundle: libappindicator3.so.1 already in bundle lib, skip compat copy"
+        return 0
+    fi
+
+    appind_path=$(ldconfig -p 2>/dev/null | grep 'libappindicator3\.so\.1 ' | head -1 | sed 's/.*=> //' | tr -d ' ')
+    if [[ -n "$appind_path" && -e "$appind_path" ]]; then
+        real_path=$(readlink -f "$appind_path")
+        cp -a "$real_path" "$lib_dir/"
+        ln -sf "$(basename "$real_path")" "$lib_dir/libappindicator3.so.1"
+        ok "UOS bundle: shipped libappindicator3 from $real_path"
+        return 0
+    fi
+
+    ayatana_path=$(ldconfig -p 2>/dev/null | grep 'libayatana-appindicator3\.so\.1 ' | head -1 | sed 's/.*=> //' | tr -d ' ')
+    if [[ -n "$ayatana_path" && -e "$ayatana_path" ]]; then
+        real_path=$(readlink -f "$ayatana_path")
+        cp -a "$real_path" "$lib_dir/"
+        ln -sf "$(basename "$real_path")" "$lib_dir/libayatana-appindicator3.so.1"
+        ln -sf libayatana-appindicator3.so.1 "$lib_dir/libappindicator3.so.1"
+        ok "UOS bundle: libappindicator3.so.1 -> libayatana-appindicator3 (from $real_path)"
+        return 0
+    fi
+
+    warn "UOS bundle: libappindicator3 / libayatana-appindicator not found in ldconfig; tray may fail on minimal hosts"
+}
+
+# 将桌面应用文件复制到 UOS 私有应用目录。
+copy_uos_application_files() {
+    local bundle_dir="$PROJECT_ROOT/build/linux/$FLUTTER_ARCH/release/bundle"
+    local plugins_dir="$PROJECT_ROOT/plugins"
+    local preload_so="$PROJECT_ROOT/go_lib/core/sandbox/linux_hook/build/libsandbox_preload.so"
+    local uninstall_script="$PROJECT_ROOT/scripts/uninstall/uninstall_unix.sh"
+    local files_dir="$UOS_ROOTFS_DIR/opt/apps/$APPSTORE_APP_ID/files"
+
+    [[ -d "$bundle_dir" ]] || fail "Flutter bundle not found: $bundle_dir"
+    cp -a "$bundle_dir"/. "$files_dir/"
+
+    bundle_uos_libappindicator "$files_dir/lib"
+
+    if [[ -d "$plugins_dir" ]]; then
+        mkdir -p "$files_dir/plugins"
+        cp -a "$plugins_dir"/. "$files_dir/plugins/"
+        ok "UOS package plugins copied"
+    else
+        warn "plugins directory not found, skip UOS plugin copy"
+    fi
+
+    if [[ -f "$preload_so" ]]; then
+        cp "$preload_so" "$files_dir/libsandbox_preload.so"
+        ok "UOS package includes libsandbox_preload.so"
+    else
+        warn "libsandbox_preload.so not found, UOS package will skip preload sandbox library"
+    fi
+
+    cat > "$files_dir/bin/$PACKAGE_NAME" << EOF
+#!/bin/bash
+set -e
+APP_DIR="/opt/apps/$APPSTORE_APP_ID/files"
+DATA_HOME="\${XDG_DATA_HOME:-\$HOME/.local/share}"
+POLICY_DIR="\$DATA_HOME/$PACKAGE_NAME/policies"
+export LD_LIBRARY_PATH="\$APP_DIR/lib:\${LD_LIBRARY_PATH:-}"
+if [ -f "\$APP_DIR/libsandbox_preload.so" ]; then
+    mkdir -p "\$POLICY_DIR"
+    cp -f "\$APP_DIR/libsandbox_preload.so" "\$POLICY_DIR/libsandbox_preload.so"
+fi
+cd "\$HOME"
+exec "\$APP_DIR/bot_sec_manager" "\$@"
+EOF
+    chmod +x "$files_dir/bin/$PACKAGE_NAME"
+
+    # 将卸载脚本放到应用私有目录，不注册系统级卸载钩子。
+    if [[ -f "$uninstall_script" ]]; then
+        cp "$uninstall_script" "$files_dir/uninstall.sh"
+        chmod +x "$files_dir/uninstall.sh"
+        ok "UOS package uninstall script copied"
+    else
+        warn "uninstall script not found, skip UOS copy: $uninstall_script"
+    fi
+}
+
+# 生成 UOS 商店包要求的 AppID 命名桌面入口和图标。
+prepare_uos_desktop_assets() {
+    local app_root="$UOS_ROOTFS_DIR/opt/apps/$APPSTORE_APP_ID"
+
+    [[ -f "$SOURCE_ICON" ]] || fail "Source icon not found: $SOURCE_ICON"
+
+    if command -v convert >/dev/null 2>&1; then
+        for size in 16 24 32 48 128 256 512; do
+            convert "$SOURCE_ICON" -resize "${size}x${size}" \
+                "$app_root/entries/icons/hicolor/${size}x${size}/apps/$APPSTORE_APP_ID.png"
+        done
+        ok "UOS icons generated with ImageMagick"
+    else
+        warn "ImageMagick convert not found, use UOS fallback icons"
+        for size_dir in 128x128 256x256 512x512; do
+            cp "$SOURCE_ICON" "$app_root/entries/icons/hicolor/$size_dir/apps/$APPSTORE_APP_ID.png"
+        done
+        if [[ -f "$TRAY_ICON" ]]; then
+            for size_dir in 16x16 24x24 32x32 48x48; do
+                cp "$TRAY_ICON" "$app_root/entries/icons/hicolor/$size_dir/apps/$APPSTORE_APP_ID.png"
+            done
+        fi
+    fi
+
+    cat > "$app_root/entries/applications/$APPSTORE_APP_ID.desktop" << EOF
+[Desktop Entry]
+Type=Application
+Name=$APP_DISPLAY_NAME
+Name[zh_CN]=$APP_DISPLAY_NAME
+Comment=AI Bot Security Manager
+Comment[zh_CN]=AI Bot 安全管理工具
+Exec=/opt/apps/$APPSTORE_APP_ID/files/bin/$PACKAGE_NAME
+Icon=$APPSTORE_APP_ID
+Terminal=false
+Categories=Utility;Security;
+StartupWMClass=$APPSTORE_APP_ID
+EOF
+}
+
 prepare_web_rootfs_layout() {
     rm -rf "$WEB_ROOTFS_DIR"
     mkdir -p "$WEB_ROOTFS_DIR/usr/bin"
@@ -620,6 +786,69 @@ EOF
     ok "Web RPM created: $rpm_file"
 }
 
+# 生成统信 UOS 商店 DEB 包，不使用维护脚本修改系统目录。
+build_uos_deb_package() {
+    local uos_version_value
+    local deb_work
+    local deb_file
+    local app_root
+    local installed_size
+
+    uos_version_value="$(uos_version)"
+    deb_work="$WORK_DIR/deb_uos/${APPSTORE_APP_ID}_${uos_version_value}_${DEB_ARCH}"
+    deb_file="$PROJECT_ROOT/build/$(build_artifact_name "$DESKTOP_TARGET" "deb")"
+    app_root="$deb_work/opt/apps/$APPSTORE_APP_ID"
+
+    log_info "Building UOS App Store DEB package"
+    rm -rf "$deb_work"
+    mkdir -p "$deb_work/DEBIAN"
+    cp -a "$UOS_ROOTFS_DIR"/. "$deb_work/"
+
+    cat > "$app_root/info" << EOF
+{
+  "appid": "$APPSTORE_APP_ID",
+  "name": "$APP_DISPLAY_NAME",
+  "version": "$uos_version_value",
+  "arch": ["$DEB_ARCH"],
+  "permissions": {
+    "autostart": false,
+    "notification": false,
+    "trayicon": true,
+    "clipboard": true,
+    "account": false,
+    "bluetooth": false,
+    "camera": false,
+    "audio_record": false,
+    "installed_apps": false
+  }
+}
+EOF
+
+    installed_size="$(du -sk "$deb_work/opt" | cut -f1)"
+    cat > "$deb_work/DEBIAN/control" << EOF
+Package: $APPSTORE_APP_ID
+Version: $uos_version_value
+Section: utils
+Priority: optional
+Architecture: $DEB_ARCH
+Installed-Size: $installed_size
+Depends: deepin-elf-verify (>= 1.1.10-1), libc6, libgtk-3-0, libglib2.0-0, libayatana-appindicator3-1 | libappindicator3-1
+Maintainer: ClawdSecbot Team <support@clawdsecbot.com>
+Description: AI Bot Security Manager
+ ClawdSecbot is a security management tool for AI bots.
+Homepage: https://github.com/clawdsecbot/bot_sec_manager
+EOF
+
+    (
+        cd "$deb_work"
+        find . -type f ! -path './DEBIAN/*' -printf '%P\0' | sort -z | xargs -0 md5sum > DEBIAN/md5sums
+    )
+
+    rm -f "$deb_file"
+    dpkg-deb --build --root-owner-group "$deb_work" "$deb_file"
+    ok "UOS App Store DEB created: $deb_file"
+}
+
 # 生成 DEB 控制文件并打包产出 deb 文件。
 build_deb_package() {
     local deb_work="$WORK_DIR/deb/${PACKAGE_NAME}_${VERSION}_${DEB_ARCH}"
@@ -670,6 +899,15 @@ fi
 exit 0
 EOF
 
+    cat > "$deb_work/DEBIAN/prerm" << 'EOF'
+#!/bin/bash
+set -e
+if [ "$1" = "remove" ] && [ -x /usr/lib/clawdsecbot/uninstall.sh ]; then
+    /usr/lib/clawdsecbot/uninstall.sh --platform linux --all-users --skip-config-paths --force || true
+fi
+exit 0
+EOF
+
     cat > "$deb_work/DEBIAN/postrm" << 'EOF'
 #!/bin/bash
 set -e
@@ -690,7 +928,7 @@ fi
 exit 0
 EOF
 
-    chmod +x "$deb_work/DEBIAN/postinst" "$deb_work/DEBIAN/postrm"
+    chmod +x "$deb_work/DEBIAN/postinst" "$deb_work/DEBIAN/prerm" "$deb_work/DEBIAN/postrm"
 
     rm -f "$deb_file"
     dpkg-deb --build --root-owner-group "$deb_work" "$deb_file"
@@ -759,6 +997,13 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || true
 fi
 
+%preun
+if [ "\$1" = "0" ]; then
+    if [ -x /usr/lib/clawdsecbot/uninstall.sh ]; then
+        /usr/lib/clawdsecbot/uninstall.sh --platform linux --all-users --skip-config-paths --force || true
+    fi
+fi
+
 %postun
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
@@ -794,6 +1039,10 @@ print_summary() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     ok "Linux release build completed"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    if [[ "$PACKAGE_TYPE" == "appstore" ]]; then
+        echo "UOS App Store DEB: $PROJECT_ROOT/build/$(build_artifact_name "$DESKTOP_TARGET" "deb")"
+        return
+    fi
     if [[ -n "$WEB_TAR_ARTIFACT" ]]; then
         echo "Web TAR: $WEB_TAR_ARTIFACT"
     fi
@@ -842,11 +1091,25 @@ main() {
     echo "Architecture: deb=$DEB_ARCH rpm=$RPM_ARCH flutter=$FLUTTER_ARCH"
     echo "Build DEB: $BUILD_DEB"
     echo "Build RPM: $BUILD_RPM"
-    echo "Targets: desktop + web"
+    if [[ "$PACKAGE_TYPE" == "appstore" ]]; then
+        echo "Targets: desktop UOS app store"
+    else
+        echo "Targets: desktop + web"
+    fi
     echo ""
 
     update_pubspec_version
     build_release_bundle
+
+    if [[ "$PACKAGE_TYPE" == "appstore" ]]; then
+        prepare_uos_rootfs_layout
+        copy_uos_application_files
+        prepare_uos_desktop_assets
+        build_uos_deb_package
+        print_summary
+        exit 0
+    fi
+
     build_web_tarball_artifact
 
     prepare_rootfs_layout

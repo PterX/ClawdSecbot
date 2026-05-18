@@ -1549,6 +1549,140 @@ class AppLocalizationsEn extends AppLocalizations {
   String get auditLogClear => 'Clear';
 
   @override
+  String auditLogClearTabConfirmMessage(String tab) {
+    return 'Clear audit logs for tab \"$tab\"? This cannot be undone.';
+  }
+
+  @override
+  String get auditLogExportNotAvailable =>
+      'File export is not available in this environment. Use the desktop app.';
+
+  @override
+  String get auditLogExportDialogTitle => 'Choose export location';
+
+  @override
+  String get auditLogMarkdownBatchHeading => '# Audit Log Batch Export';
+
+  @override
+  String auditLogMarkdownBatchCountLine(int count) {
+    return '- Exported logs: $count';
+  }
+
+  @override
+  String auditLogMarkdownBatchTimeLine(String time) {
+    return '- Exported at: $time';
+  }
+
+  @override
+  String auditLogExportBatchSuccess(int count, String path) {
+    return 'Exported $count logs to $path';
+  }
+
+  @override
+  String auditLogExportSingleSuccess(String path) {
+    return 'Exported to $path';
+  }
+
+  @override
+  String auditLogExportFailedWithReason(String reason) {
+    return 'Export failed: $reason';
+  }
+
+  @override
+  String auditLogTooltipExportSelected(int count) {
+    return 'Export selected logs ($count)';
+  }
+
+  @override
+  String auditLogSelectedBadge(int count) {
+    return '$count selected';
+  }
+
+  @override
+  String auditLogPaginationSummary(int total, int latest) {
+    return '$total total, latest $latest';
+  }
+
+  @override
+  String get auditLogFilterAllBots => 'All Bots';
+
+  @override
+  String auditLogToolCallsCount(int count) {
+    return '$count tool calls';
+  }
+
+  @override
+  String get auditLogContentEmptyPlaceholder => '(empty content)';
+
+  @override
+  String get auditLogSectionRaw => 'Raw';
+
+  @override
+  String auditLogSectionRawWithCount(int count) {
+    return 'Raw ($count)';
+  }
+
+  @override
+  String auditLogSectionActionsWithCount(int count) {
+    return 'Actions ($count)';
+  }
+
+  @override
+  String auditLogSectionEventsWithCount(int count) {
+    return 'Events ($count)';
+  }
+
+  @override
+  String get auditLogSectionEventsHeading => 'Events';
+
+  @override
+  String get auditLogNoRelatedSecurityEvents => 'No related security events';
+
+  @override
+  String get auditLogEventBadgeBlocked => 'Blocked';
+
+  @override
+  String get auditLogEventBadgeNeedsConfirmation => 'Needs Confirmation';
+
+  @override
+  String get auditLogEventBadgeToolExecution => 'Tool Execution';
+
+  @override
+  String auditLogToolCallRawLine(String name, String args) {
+    return 'Tool call: $name\nArguments:\n$args';
+  }
+
+  @override
+  String get auditLogTimelineStart => 'Start';
+
+  @override
+  String get auditLogTimelineEnd => 'End';
+
+  @override
+  String auditLogTimelineStep(int step) {
+    return 'Step $step';
+  }
+
+  @override
+  String get auditLogMarkdownDetailExportTitle => 'Audit Log Detail Export';
+
+  @override
+  String get auditLogMarkdownSectionMeta => '## Meta';
+
+  @override
+  String get auditLogMarkdownSectionRaw => '## Raw';
+
+  @override
+  String get auditLogMarkdownSectionActions => '## Actions';
+
+  @override
+  String get auditLogMarkdownSectionEvents => '## Events';
+
+  @override
+  String get auditLogMarkdownNoRelatedEventsBody =>
+      'No related security events';
+
+  @override
   String get auditLogDetail => 'Log Detail';
 
   @override

@@ -868,6 +868,118 @@
   "auditLogClearConfirmMessage": "Are you sure you want to clear all audit logs? This action cannot be undone.",
   "auditLogCancel": "Cancel",
   "auditLogClear": "Clear",
+  "auditLogClearTabConfirmMessage": "Clear audit logs for tab \"{tab}\"? This cannot be undone.",
+  "@auditLogClearTabConfirmMessage": {
+    "placeholders": {
+      "tab": {"type": "String"}
+    }
+  },
+  "auditLogExportNotAvailable": "File export is not available in this environment. Use the desktop app.",
+  "auditLogExportDialogTitle": "Choose export location",
+  "auditLogMarkdownBatchHeading": "# Audit Log Batch Export",
+  "auditLogMarkdownBatchCountLine": "- Exported logs: {count}",
+  "@auditLogMarkdownBatchCountLine": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogMarkdownBatchTimeLine": "- Exported at: {time}",
+  "@auditLogMarkdownBatchTimeLine": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "auditLogExportBatchSuccess": "Exported {count} logs to {path}",
+  "@auditLogExportBatchSuccess": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "path": {"type": "String"}
+    }
+  },
+  "auditLogExportSingleSuccess": "Exported to {path}",
+  "@auditLogExportSingleSuccess": {
+    "placeholders": {
+      "path": {"type": "String"}
+    }
+  },
+  "auditLogExportFailedWithReason": "Export failed: {reason}",
+  "@auditLogExportFailedWithReason": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "auditLogTooltipExportSelected": "Export selected logs ({count})",
+  "@auditLogTooltipExportSelected": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogSelectedBadge": "{count} selected",
+  "@auditLogSelectedBadge": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogPaginationSummary": "{total} total, latest {latest}",
+  "@auditLogPaginationSummary": {
+    "placeholders": {
+      "total": {"type": "int"},
+      "latest": {"type": "int"}
+    }
+  },
+  "auditLogFilterAllBots": "All Bots",
+  "auditLogToolCallsCount": "{count} tool calls",
+  "@auditLogToolCallsCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogContentEmptyPlaceholder": "(empty content)",
+  "auditLogSectionRaw": "Raw",
+  "auditLogSectionRawWithCount": "Raw ({count})",
+  "@auditLogSectionRawWithCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogSectionActionsWithCount": "Actions ({count})",
+  "@auditLogSectionActionsWithCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogSectionEventsWithCount": "Events ({count})",
+  "@auditLogSectionEventsWithCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "auditLogSectionEventsHeading": "Events",
+  "auditLogNoRelatedSecurityEvents": "No related security events",
+  "auditLogEventBadgeBlocked": "Blocked",
+  "auditLogEventBadgeNeedsConfirmation": "Needs Confirmation",
+  "auditLogEventBadgeToolExecution": "Tool Execution",
+  "auditLogToolCallRawLine": "Tool call: {name}\nArguments:\n{args}",
+  "@auditLogToolCallRawLine": {
+    "placeholders": {
+      "name": {"type": "String"},
+      "args": {"type": "String"}
+    }
+  },
+  "auditLogTimelineStart": "Start",
+  "auditLogTimelineEnd": "End",
+  "auditLogTimelineStep": "Step {step}",
+  "@auditLogTimelineStep": {
+    "placeholders": {
+      "step": {"type": "int"}
+    }
+  },
+  "auditLogMarkdownDetailExportTitle": "Audit Log Detail Export",
+  "auditLogMarkdownSectionMeta": "## Meta",
+  "auditLogMarkdownSectionRaw": "## Raw",
+  "auditLogMarkdownSectionActions": "## Actions",
+  "auditLogMarkdownSectionEvents": "## Events",
+  "auditLogMarkdownNoRelatedEventsBody": "No related security events",
   "auditLogDetail": "Log Detail",
   "auditLogId": "Log ID",
   "auditLogTimestamp": "Timestamp",

@@ -1,27 +1,26 @@
+import '../l10n/app_localizations.dart';
 import '../models/audit_log_model.dart';
 import '../models/security_event_model.dart';
 
-/// 生成审计日志详情的 Markdown 文本（.md 导出）。
+/// 生成审计日志详情的 Markdown 文本（.md 导出），文案随 [l10n] 语言变化。
 String buildAuditLogMarkdownContent({
-  required bool isZh,
+  required AppLocalizations l10n,
   required AuditLog log,
   required List<SecurityEvent> relatedEvents,
   required String rawText,
   required String actionText,
   required String eventText,
 }) {
-  final title = isZh ? '审计日志详情导出' : 'Audit Log Detail Export';
+  final title = l10n.auditLogMarkdownDetailExportTitle;
   final safeRaw = _escapeMarkdown(rawText);
   final safeAction = _escapeMarkdown(actionText);
   final safeEvent = _escapeMarkdown(
-    relatedEvents.isEmpty
-        ? (isZh ? '暂无关联安全事件' : 'No related security events')
-        : eventText,
+    relatedEvents.isEmpty ? l10n.auditLogMarkdownNoRelatedEventsBody : eventText,
   );
   return '''
 # $title
 
-## Meta
+${l10n.auditLogMarkdownSectionMeta}
 - ID: ${_escapeMarkdown(log.id)}
 - Request ID: ${_escapeMarkdown(log.requestId)}
 - Timestamp: ${_escapeMarkdown(log.timestamp.toIso8601String())}
@@ -31,17 +30,17 @@ String buildAuditLogMarkdownContent({
 - Risk Level: ${_escapeMarkdown(log.riskLevel ?? '')}
 - Risk Reason: ${_escapeMarkdown(log.riskReason ?? '')}
 
-## ${isZh ? '原始' : 'Raw'}
+${l10n.auditLogMarkdownSectionRaw}
 ```text
 $safeRaw
 ```
 
-## ${isZh ? '动作' : 'Actions'}
+${l10n.auditLogMarkdownSectionActions}
 ```text
 $safeAction
 ```
 
-## ${isZh ? '事件' : 'Events'}
+${l10n.auditLogMarkdownSectionEvents}
 ```text
 $safeEvent
 ```

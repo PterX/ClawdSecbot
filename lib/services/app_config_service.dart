@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
+import '../config/build_config.dart';
 import 'database_service.dart';
 
 /// 应用配置服务，负责读写应用数据目录中的配置文件。
@@ -34,7 +35,7 @@ class AppConfigService {
     return _normalizeLogDir(trimmed);
   }
 
-  /// 获取沙箱目录根路径（例如 `~/.botsec`）。
+  /// 获取沙箱目录根路径（例如 `~/.botsec` 或 XDG 数据目录）。
   Future<String> getSandboxDir() async {
     final config = await _loadConfig();
     final configured = config[_sandboxDirKey];
@@ -161,6 +162,19 @@ class AppConfigService {
 
   /// 解析默认沙箱根目录。
   String _resolveDefaultSandboxDir() {
+    if (Platform.isLinux && BuildConfig.isAppStore) {
+      final dataHome = Platform.environment['XDG_DATA_HOME'];
+      if (dataHome != null && dataHome.trim().isNotEmpty) {
+        return _normalizeDir(path.join(dataHome, 'clawdsecbot'));
+      }
+      final homeDir = Platform.environment['HOME'] ?? '';
+      if (homeDir.trim().isNotEmpty) {
+        return _normalizeDir(
+          path.join(homeDir, '.local', 'share', 'clawdsecbot'),
+        );
+      }
+    }
+
     final homeDir =
         Platform.environment['HOME'] ??
         Platform.environment['USERPROFILE'] ??

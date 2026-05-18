@@ -82,7 +82,7 @@ class _AuditLogPageState extends State<AuditLogPage>
   Map<String, dynamic> _statistics = {};
   bool _isMaximized = false;
   List<_AuditAssetFilterTab> _assetTabs = const [
-    _AuditAssetFilterTab(label: 'All Bots', assetName: '', assetID: ''),
+    _AuditAssetFilterTab(label: '', assetName: '', assetID: ''),
   ];
   String _selectedAssetName = '';
   String _selectedAssetID = '';
@@ -151,8 +151,13 @@ class _AuditLogPageState extends State<AuditLogPage>
   }
 
   Future<void> _loadAssetTabs() async {
+    if (!mounted) return;
     final tabs = <_AuditAssetFilterTab>[
-      const _AuditAssetFilterTab(label: 'All Bots', assetName: '', assetID: ''),
+      _AuditAssetFilterTab(
+        label: '',
+        assetName: '',
+        assetID: '',
+      ),
     ];
     final assets = await _auditLogDatabaseService.getAuditLogAssets();
     for (final asset in assets) {
@@ -305,31 +310,36 @@ class _AuditLogPageState extends State<AuditLogPage>
     _loadLogs();
   }
 
+  /// 资产筛选标签在界面上的显示文案（首项「全部」不存具体语言串，运行时本地化）。
+  String _auditTabDisplayLabel(_AuditAssetFilterTab tab, AppLocalizations l10n) {
+    if (tab.assetName.isEmpty && tab.assetID.isEmpty) {
+      return l10n.auditLogFilterAllBots;
+    }
+    return tab.label;
+  }
+
   void _clearAllLogs() {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     final hasAssetFilter =
         _selectedAssetName.isNotEmpty || _selectedAssetID.isNotEmpty;
-    final currentTabLabel = _assetTabs
-        .where(
-          (tab) =>
-              tab.assetName == _selectedAssetName &&
-              tab.assetID == _selectedAssetID,
-        )
-        .map((tab) => tab.label)
-        .cast<String?>()
-        .firstWhere(
-          (label) => label != null && label.isNotEmpty,
-          orElse: () {
-            return _selectedAssetName.isNotEmpty ? _selectedAssetName : null;
-          },
-        );
+    _AuditAssetFilterTab? currentTab;
+    for (final t in _assetTabs) {
+      if (t.assetName == _selectedAssetName && t.assetID == _selectedAssetID) {
+        currentTab = t;
+        break;
+      }
+    }
+    final currentTabDisplay = currentTab != null
+        ? _auditTabDisplayLabel(currentTab, l10n)
+        : (_selectedAssetName.isNotEmpty
+              ? _selectedAssetName
+              : l10n.auditLogFilterAllBots);
     final confirmTitle = hasAssetFilter
-        ? '${l10n?.auditLogClear ?? 'Clear'} ${currentTabLabel ?? ''}'.trim()
-        : (l10n?.auditLogClearConfirmTitle ?? 'Clear All Logs');
+        ? '${l10n.auditLogClear} $currentTabDisplay'.trim()
+        : l10n.auditLogClearConfirmTitle;
     final confirmMessage = hasAssetFilter
-        ? '确定要清空当前标签页“${currentTabLabel ?? _selectedAssetName}”的审计日志吗？此操作无法撤销。'
-        : (l10n?.auditLogClearConfirmMessage ??
-              'Are you sure you want to clear all audit logs? This action cannot be undone.');
+        ? l10n.auditLogClearTabConfirmMessage(currentTabDisplay)
+        : l10n.auditLogClearConfirmMessage;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -342,7 +352,7 @@ class _AuditLogPageState extends State<AuditLogPage>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(l10n?.auditLogCancel ?? 'Cancel'),
+            child: Text(l10n.auditLogCancel),
           ),
           TextButton(
             onPressed: () async {
@@ -364,7 +374,7 @@ class _AuditLogPageState extends State<AuditLogPage>
               await _loadStatistics();
             },
             child: Text(
-              l10n?.auditLogClear ?? 'Clear',
+              l10n.auditLogClear,
               style: const TextStyle(color: Colors.red),
             ),
           ),
@@ -391,11 +401,11 @@ class _AuditLogPageState extends State<AuditLogPage>
   }
 
   void _copyText(String text) {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(l10n?.appStoreGuideCopied ?? '已复制到剪贴板'),
+        content: Text(l10n.appStoreGuideCopied),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -404,20 +414,15 @@ class _AuditLogPageState extends State<AuditLogPage>
   Future<void> _exportMarkdownContent({
     required String fileName,
     required String content,
-    required String successMessageZh,
-    required String successMessageEn,
+    required String Function(String exportedPath) buildSuccessMessage,
   }) async {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     final export = widget.onExportMarkdown;
     if (export == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            _isZh
-                ? '当前环境暂不支持文件导出，请在桌面端操作。'
-                : 'File export is not available in this environment. Use desktop app.',
-          ),
+          content: Text(l10n.auditLogExportNotAvailable),
           duration: const Duration(seconds: 3),
         ),
       );
@@ -429,8 +434,7 @@ class _AuditLogPageState extends State<AuditLogPage>
       if (exportedPath == null || exportedPath.trim().isEmpty || !mounted) {
         return;
       }
-      final message = _isZh ? successMessageZh : successMessageEn;
-      final text = message.replaceAll('{path}', exportedPath.trim());
+      final text = buildSuccessMessage(exportedPath.trim());
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(text), duration: const Duration(seconds: 4)),
       );
@@ -439,11 +443,7 @@ class _AuditLogPageState extends State<AuditLogPage>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            _isZh
-                ? '${l10n?.auditLogExportFailed ?? "导出失败"}: $e'
-                : '${l10n?.auditLogExportFailed ?? "Export failed"}: $e',
-          ),
+          content: Text(l10n.auditLogExportFailedWithReason('$e')),
           duration: const Duration(seconds: 3),
         ),
       );
@@ -452,6 +452,7 @@ class _AuditLogPageState extends State<AuditLogPage>
 
   Future<void> _exportSelectedLogs() async {
     if (_selectedLogsForExport.isEmpty) return;
+    final l10n = AppLocalizations.of(context)!;
     try {
       final selectedLogs = _selectedLogsForExport.values.toList()
         ..sort((a, b) {
@@ -469,7 +470,7 @@ class _AuditLogPageState extends State<AuditLogPage>
               : await _securityEventDatabaseService
                     .getSecurityEventsByRequestID(log.requestId);
           return buildAuditLogMarkdownContent(
-            isZh: _isZh,
+            l10n: l10n,
             log: log,
             relatedEvents: relatedEvents,
             rawText: _buildRawSectionText(log),
@@ -481,14 +482,10 @@ class _AuditLogPageState extends State<AuditLogPage>
 
       final exportTime = DateTime.now().toIso8601String();
       final buffer = StringBuffer()
-        ..writeln(_isZh ? '# 审计日志批量导出' : '# Audit Log Batch Export')
+        ..writeln(l10n.auditLogMarkdownBatchHeading)
         ..writeln()
-        ..writeln(
-          _isZh
-              ? '- 导出条数: ${selectedLogs.length}'
-              : '- Exported logs: ${selectedLogs.length}',
-        )
-        ..writeln(_isZh ? '- 导出时间: $exportTime' : '- Exported at: $exportTime');
+        ..writeln(l10n.auditLogMarkdownBatchCountLine(selectedLogs.length))
+        ..writeln(l10n.auditLogMarkdownBatchTimeLine(exportTime));
 
       for (final content in contents) {
         buffer
@@ -500,15 +497,15 @@ class _AuditLogPageState extends State<AuditLogPage>
       await _exportMarkdownContent(
         fileName: fileName,
         content: buffer.toString(),
-        successMessageZh: '已批量导出 ${selectedLogs.length} 条日志到 {path}',
-        successMessageEn: 'Exported ${selectedLogs.length} logs to {path}',
+        buildSuccessMessage: (path) =>
+            l10n.auditLogExportBatchSuccess(selectedLogs.length, path),
       );
     } catch (e, st) {
       appLogger.error('[AuditLogWindow] Batch export prepare failed', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_isZh ? '导出失败: $e' : 'Export failed: $e'),
+          content: Text(l10n.auditLogExportFailedWithReason('$e')),
           duration: const Duration(seconds: 3),
         ),
       );
@@ -562,7 +559,7 @@ class _AuditLogPageState extends State<AuditLogPage>
   }
 
   Widget _buildTitleBar() {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     final isWindows = isRuntimeWindows;
     final isLinux = isRuntimeLinux;
 
@@ -606,7 +603,7 @@ class _AuditLogPageState extends State<AuditLogPage>
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      l10n?.auditLogTitle ?? 'Audit Log',
+                      l10n.auditLogTitle,
                       style: AppFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -626,15 +623,15 @@ class _AuditLogPageState extends State<AuditLogPage>
             onPressed: _selectedLogsForExport.isEmpty
                 ? null
                 : _exportSelectedLogs,
-            tooltip: _isZh
-                ? '批量导出已选日志（${_selectedLogsForExport.length}）'
-                : 'Export selected logs (${_selectedLogsForExport.length})',
+            tooltip: l10n.auditLogTooltipExportSelected(
+              _selectedLogsForExport.length,
+            ),
           ),
           IconButton(
             icon: const Icon(LucideIcons.refreshCw, size: 16),
             color: Colors.white70,
             onPressed: _refreshFromToolbar,
-            tooltip: l10n?.auditLogRefresh ?? 'Refresh',
+            tooltip: l10n.auditLogRefresh,
           ),
           IconButton(
             icon: const Icon(LucideIcons.trash2, size: 16),
@@ -642,8 +639,8 @@ class _AuditLogPageState extends State<AuditLogPage>
             onPressed: _clearAllLogs,
             tooltip:
                 (_selectedAssetName.isNotEmpty || _selectedAssetID.isNotEmpty)
-                ? (l10n?.auditLogClear ?? 'Clear')
-                : (l10n?.auditLogClearAll ?? 'Clear All'),
+                ? l10n.auditLogClear
+                : l10n.auditLogClearAll,
           ),
           if (isRuntimeWindows) ...[
             const SizedBox(width: 8),
@@ -721,7 +718,7 @@ class _AuditLogPageState extends State<AuditLogPage>
   }
 
   Widget _buildStatisticsBar() {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     // final total = _statistics['total'] ?? 0;
     // In new definition, "Risk" label corresponds to Warned count (Audit Mode)
     // We display riskCount for the risk label
@@ -740,19 +737,19 @@ class _AuditLogPageState extends State<AuditLogPage>
       child: Row(
         children: [
           _buildStatItem(
-            l10n?.auditLogBlocked ?? 'Blocked',
+            l10n.auditLogBlocked,
             blockedCount,
             Colors.red,
           ),
           const SizedBox(width: 24),
           _buildStatItem(
-            l10n?.auditLogRisk ?? 'Risk',
+            l10n.auditLogRisk,
             riskCount,
             Colors.orange,
           ),
           const SizedBox(width: 24),
           _buildStatItem(
-            l10n?.auditLogAllowed ?? 'Allowed',
+            l10n.auditLogAllowed,
             allowedCount,
             Colors.green,
           ),
@@ -787,7 +784,7 @@ class _AuditLogPageState extends State<AuditLogPage>
   }
 
   Widget _buildToolbar() {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -803,7 +800,10 @@ class _AuditLogPageState extends State<AuditLogPage>
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: ChoiceChip(
-                    label: Text(tab.label, style: AppFonts.inter(fontSize: 12)),
+                    label: Text(
+                      _auditTabDisplayLabel(tab, l10n),
+                      style: AppFonts.inter(fontSize: 12),
+                    ),
                     selected: selected,
                     onSelected: (_) => _onAssetTabChanged(tab),
                     selectedColor: const Color(
@@ -829,17 +829,14 @@ class _AuditLogPageState extends State<AuditLogPage>
                   maxLines: 1,
                   decoration: InputDecoration(
                     hintText:
-                        '${l10n?.auditLogSearchHint ?? 'Search request, reply, risk, messages & tools...'} '
-                        '${l10n?.auditLogSearchSubmitHint ?? 'Press Enter to search'}',
+                        '${l10n.auditLogSearchHint} ${l10n.auditLogSearchSubmitHint}',
                     hintStyle: AppFonts.inter(
                       fontSize: 12,
                       color: Colors.white38,
                       height: 1.25,
                     ),
                     prefixIcon: Tooltip(
-                      message:
-                          l10n?.auditLogSearchTooltip ??
-                          'Matches substrings in request body, output, risk reason, and raw messages/tool_calls JSON.',
+                      message: l10n.auditLogSearchTooltip,
                       child: const Icon(
                         LucideIcons.search,
                         size: 16,
@@ -875,7 +872,7 @@ class _AuditLogPageState extends State<AuditLogPage>
               const SizedBox(width: 12),
               FilterChip(
                 label: Text(
-                  l10n?.auditLogRiskOnly ?? 'Risk Only',
+                  l10n.auditLogRiskOnly,
                   style: AppFonts.inter(fontSize: 12),
                 ),
                 selected: _riskOnly,
@@ -907,9 +904,9 @@ class _AuditLogPageState extends State<AuditLogPage>
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        _isZh
-                            ? '已选 ${_selectedLogsForExport.length} 条'
-                            : '${_selectedLogsForExport.length} selected',
+                        l10n.auditLogSelectedBadge(
+                          _selectedLogsForExport.length,
+                        ),
                         style: AppFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -920,7 +917,7 @@ class _AuditLogPageState extends State<AuditLogPage>
                       GestureDetector(
                         onTap: _clearSelectedLogs,
                         child: Text(
-                          _isZh ? '清空' : 'Clear',
+                          l10n.auditLogClear,
                           style: AppFonts.inter(
                             fontSize: 12,
                             color: const Color(0xFF93C5FD),
@@ -939,7 +936,7 @@ class _AuditLogPageState extends State<AuditLogPage>
   }
 
   Widget _buildLogList() {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: Color(0xFF6366F1)),
@@ -958,7 +955,7 @@ class _AuditLogPageState extends State<AuditLogPage>
             ),
             const SizedBox(height: 16),
             Text(
-              l10n?.auditLogNoLogs ?? 'No audit logs',
+              l10n.auditLogNoLogs,
               style: AppFonts.inter(fontSize: 14, color: Colors.white54),
             ),
           ],
@@ -1063,11 +1060,7 @@ class _AuditLogPageState extends State<AuditLogPage>
                             IconButton(
                               icon: const Icon(LucideIcons.copy, size: 14),
                               color: Colors.white54,
-                              tooltip:
-                                  AppLocalizations.of(
-                                    context,
-                                  )?.appStoreGuideCopy ??
-                                  '复制',
+                              tooltip: l10n.appStoreGuideCopy,
                               onPressed: () => _copyText(log.requestContent),
                             ),
                           ],
@@ -1095,7 +1088,7 @@ class _AuditLogPageState extends State<AuditLogPage>
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                '${log.toolCalls.length} tool calls',
+                                l10n.auditLogToolCallsCount(log.toolCalls.length),
                                 style: AppFonts.inter(
                                   fontSize: 11,
                                   color: Colors.white38,
@@ -1218,13 +1211,14 @@ class _AuditLogPageState extends State<AuditLogPage>
   Future<void> _exportLogDetail() async {
     final log = _selectedLog;
     if (log == null) return;
+    final l10n = AppLocalizations.of(context)!;
     try {
       final safeId = _safeFileNameSegment(log.id);
       final fileName =
           'audit_log_${safeId}_${DateTime.now().millisecondsSinceEpoch}.md';
 
       final markdownContent = buildAuditLogMarkdownContent(
-        isZh: _isZh,
+        l10n: l10n,
         log: log,
         relatedEvents: _relatedEvents,
         rawText: _buildRawSectionText(log),
@@ -1234,15 +1228,14 @@ class _AuditLogPageState extends State<AuditLogPage>
       await _exportMarkdownContent(
         fileName: fileName,
         content: markdownContent,
-        successMessageZh: '已导出到 {path}',
-        successMessageEn: 'Exported to {path}',
+        buildSuccessMessage: l10n.auditLogExportSingleSuccess,
       );
     } catch (e, st) {
       appLogger.error('[AuditLogWindow] Single export prepare failed', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_isZh ? '导出失败: $e' : 'Export failed: $e'),
+          content: Text(l10n.auditLogExportFailedWithReason('$e')),
           duration: const Duration(seconds: 3),
         ),
       );
@@ -1251,7 +1244,7 @@ class _AuditLogPageState extends State<AuditLogPage>
 
   /// Bottom bar: totals, current page info, and pagination controls.
   Widget _buildPagination() {
-    final l10n = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context)!;
     final totalPages = _totalCount == 0
         ? 1
         : ((_totalCount + _pageSize - 1) ~/ _pageSize);
@@ -1259,9 +1252,7 @@ class _AuditLogPageState extends State<AuditLogPage>
         ? 0
         : math.min((_currentPage + 1) * _pageSize, _totalCount);
 
-    final countLine = _isZh
-        ? '共$_totalCount条，最新$latestCount条'
-        : '$_totalCount total, latest $latestCount';
+    final countLine = l10n.auditLogPaginationSummary(_totalCount, latestCount);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1290,8 +1281,7 @@ class _AuditLogPageState extends State<AuditLogPage>
                 : null,
           ),
           Text(
-            l10n?.auditLogPageInfo(_currentPage + 1, totalPages) ??
-                'Page ${_currentPage + 1} of $totalPages',
+            l10n.auditLogPageInfo(_currentPage + 1, totalPages),
             style: AppFonts.inter(fontSize: 12, color: Colors.white54),
           ),
           IconButton(
